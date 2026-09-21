@@ -4,71 +4,136 @@ on:
   workflow_dispatch:
   push:
 
+env:
+  UC1: devkits/demand-flex/uc1-bdr-w-baselining/examples
+  UC2: devkits/demand-flex/uc2-bid-curve-pac/examples
+  NET: specification/policies/demand-flex-networkpolicy.rego
+  CON: specification/policies/demand-flex-contractpolicy.rego
+  GUIDE: docs/implementation-guides/v2/Demand_Flexibility/Demand_Flexibility.md
+
 jobs:
-  checks:
+
+  # ------------------------------------------------------------------
+  # Must stay green. Anything red here is a regression.
+  # ------------------------------------------------------------------
+  conformance:
+    name: Conformance
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: open-policy-agent/setup-opa@v2
-        with:
-          version: latest
+        with: { version: latest }
+
+      - name: Every uc1 fixture passes the network policy
+        run: |
+          FAILED=0
+          for f in $UC1/*.json; do
+            V=$(opa eval -f json -d $NET -i "$f" \
+                 'data.deg.policy.demand_flex_network.violations' \
+                 | jq -c '.result[0].expressions[0].value')
+            if [ "$V" = "[]" ]; then
+              echo "  PASS  $(basename $f)"
+            else
+              echo "  FAIL  $(basename $f) -> $V"; FAILED=1
+            fi
+          done
+          exit $FAILED
+
+      - name: Settlement equals 436.25
+        run: |
+          FAILED=0
+          for f in on-status-response-settled.json on-status-response-actuals.json; do
+            S=$(opa eval -f json -d $CON -i "$UC1/$f" \
+                 'data.deg.contracts.demand_flex.revenue_flows' \
+                 | jq -r '.result[0].expressions[0].value
+                          | map(select(.role=="seller")) | .[0].value')
+            B=$(opa eval -f json -d $CON -i "$UC1/$f" \
+                 'data.deg.contracts.demand_flex.revenue_flows' \
+                 | jq -r '.result[0].expressions[0].value
+                          | map(select(.role=="buyer")) | .[0].value')
+            if [ "$S" = "436.25" ] && [ "$B" = "-436.25" ]; then
+              echo "  PASS  $f  seller=$S buyer=$B"
+            else
+              echo "  FAIL  $f  seller=$S buyer=$B (expected 436.25 / -436.25)"; FAILED=1
+            fi
+          done
+          exit $FAILED
 
       - name: Existing policy unit tests
-        if: always()
-        continue-on-error: true
         run: |
-          opa test specification/policies/*.rego specification/policies/test/*.rego -v
+          opa test specification/policies/*.rego specification/policies/test/*.rego
 
-      - name: Fixture inventory
-        if: always()
-        run: |
-          echo "--- uc1 examples ---"; ls devkits/demand-flex/uc1-bdr-w-baselining/examples/
-          echo "--- uc2 examples ---"; ls devkits/demand-flex/uc2-bid-curve-pac/examples/
+  # ------------------------------------------------------------------
+  # Green means the documented defects are STILL PRESENT.
+  # Red here means something changed - check whether it was fixed.
+  # ------------------------------------------------------------------
+  known-defects:
+    name: Known defects (green = still broken)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: open-policy-agent/setup-opa@v2
+        with: { version: latest }
 
-      - name: "CHECK A - does the shipped example settle to 436.25"
-        if: always()
-        continue-on-error: true
+      - name: "D1 - bid-curve payloads rejected by the shared network policy"
         run: |
-          C=specification/policies/demand-flex-contractpolicy.rego
-          for f in on-status-response-settled.json on-status-response-actuals.json; do
-            P=devkits/demand-flex/uc1-bdr-w-baselining/examples/$f
-            echo "=============== $f"
-            echo "--- violations:"
-            opa eval -f pretty -d $C -i $P 'data.deg.contracts.demand_flex.violations'
-            echo "--- revenue_flows:"
-            opa eval -f pretty -d $C -i $P 'data.deg.contracts.demand_flex.revenue_flows'
+          REJECTED=0; TOTAL=0
+          NEEDLOCK=0; COMMITLOCK=0; STAGEGATE=0
+          for f in $UC2/*.json; do
+            TOTAL=$((TOTAL+1))
+            V=$(opa eval -f json -d $NET -i "$f" \
+                 'data.deg.policy.demand_flex_network.violations' \
+                 | jq -c '.result[0].expressions[0].value')
+            [ "$V" != "[]" ] && REJECTED=$((REJECTED+1))
+            echo "$V" | grep -q "DemandFlexNeed columns must be exactly" && NEEDLOCK=1
+            echo "$V" | grep -q "column must be exactly"                 && COMMITLOCK=1
+            echo "$V" | grep -q "requires a CAPACITY_OFFERED column"     && STAGEGATE=1
           done
+          echo "rejected $REJECTED of $TOTAL bid-curve fixtures"
+          echo "rule families firing: need-lock=$NEEDLOCK commit-lock=$COMMITLOCK stage-gate=$STAGEGATE"
+          FAILED=0
+          [ "$REJECTED" -gt 0 ] || { echo "  UNEXPECTED: nothing rejected - defect may be fixed"; FAILED=1; }
+          [ "$NEEDLOCK$COMMITLOCK$STAGEGATE" = "111" ] \
+            || { echo "  UNEXPECTED: not all three rule families fired"; FAILED=1; }
+          exit $FAILED
 
-      - name: "CHECK B - are bid-curve payloads rejected by the network policy"
-        if: always()
-        continue-on-error: true
+      - name: "D2 - a partial page still settles to a full figure"
         run: |
-          N=specification/policies/demand-flex-networkpolicy.rego
-          echo "### uc2 (bid curve) - expecting column-lock violations"
-          for f in devkits/demand-flex/uc2-bid-curve-pac/examples/*.json; do
-            echo "=============== $(basename $f)"
-            opa eval -f pretty -d $N -i "$f" 'data.deg.policy.demand_flex_network.violations'
+          FAILED=0
+          for f in on-status-response-actuals-paged-push.json \
+                   on-status-response-actuals-paged-pull.json; do
+            LAST=$(jq -r '[.message.contract.performance[]?
+                          .performanceAttributes.pageInfo.isLast][0]' "$UC1/$f")
+            N=$(jq -r '[.message.contract.performance[]?
+                        .performanceAttributes.meters[]?.meterId] | length' "$UC1/$f")
+            TOT=$(jq -r '[.message.contract.performance[]?
+                          .performanceAttributes.pageInfo.total][0]' "$UC1/$f")
+            S=$(opa eval -f json -d $CON -i "$UC1/$f" \
+                 'data.deg.contracts.demand_flex.revenue_flows' \
+                 | jq -r '.result[0].expressions[0].value
+                          | map(select(.role=="seller")) | .[0].value')
+            echo "  $f: isLast=$LAST meters_in_page=$N total=$TOT settles=$S"
+            if [ "$LAST" = "false" ] && [ "$S" = "436.25" ]; then
+              echo "        DEFECT PRESENT - incomplete page produced a full settlement"
+            else
+              echo "        UNEXPECTED - behaviour changed"; FAILED=1
+            fi
           done
-          echo
-          echo "### uc1 control - expecting these to be clean"
-          for f in devkits/demand-flex/uc1-bdr-w-baselining/examples/*.json; do
-            echo "=============== $(basename $f)"
-            opa eval -f pretty -d $N -i "$f" 'data.deg.policy.demand_flex_network.violations'
-          done
+          exit $FAILED
 
-      - name: "CHECK C - does a partial page settle anyway"
-        if: always()
-        continue-on-error: true
+      - name: "D3 - the implementation guide contradicts the fixtures"
         run: |
-          C=specification/policies/demand-flex-contractpolicy.rego
-          for f in on-status-response-actuals-paged-push.json on-status-response-actuals-paged-pull.json; do
-            P=devkits/demand-flex/uc1-bdr-w-baselining/examples/$f
-            echo "=============== $f"
-            echo "--- pageInfo says:"
-            jq -c '.message.contract.performance[]?.performanceAttributes.pageInfo' $P
-            echo "--- meters actually in this page:"
-            jq -c '[.message.contract.performance[]?.performanceAttributes.meters[]?.meterId]' $P
-            echo "--- revenue_flows:"
-            opa eval -f pretty -d $C -i $P 'data.deg.contracts.demand_flex.revenue_flows'
-          done
+          G525=$(grep -c '525' $GUIDE || true)
+          G436=$(grep -c '436.25' $GUIDE || true)
+          GUSAGE=$(grep -c '"USAGE"' $GUIDE || true)
+          FUSAGE=$(grep -c '"USAGE"' $UC1/on-status-response-actuals.json || true)
+          echo "  guide mentions 525:      $G525"
+          echo "  guide mentions 436.25:   $G436"
+          echo "  guide USAGE columns:     $GUSAGE"
+          echo "  fixture USAGE columns:   $FUSAGE"
+          FAILED=0
+          [ "$G525" -gt 0 ]   || { echo "  UNEXPECTED: 525 gone - guide may be fixed"; FAILED=1; }
+          [ "$G436" -eq 0 ]   || { echo "  UNEXPECTED: guide now cites the correct figure"; FAILED=1; }
+          [ "$GUSAGE" -eq 0 ] || { echo "  UNEXPECTED: guide now shows USAGE"; FAILED=1; }
+          [ "$FUSAGE" -gt 0 ] || { echo "  UNEXPECTED: fixture lost its USAGE column"; FAILED=1; }
+          exit $FAILED
