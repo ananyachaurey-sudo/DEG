@@ -1,0 +1,48 @@
+name: DEG policy checks
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  recon:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install OPA
+        run: |
+          curl -sSL -o opa https://openpolicyagent.org/downloads/latest/opa_linux_amd64_static
+          chmod +x opa && sudo mv opa /usr/local/bin/
+          opa version
+
+      - name: Which commit is this fork at
+        run: |
+          git log -1 --format='%h  %ad  %s' --date=short
+
+      - name: Repository inventory
+        run: |
+          echo "--- specification/policies ---"
+          ls -la specification/policies/ 2>/dev/null || echo "MISSING"
+          echo "--- specification/policies/test ---"
+          ls specification/policies/test/ 2>/dev/null || echo "MISSING"
+          echo "--- devkits ---"
+          ls devkits/ 2>/dev/null || echo "MISSING"
+          echo "--- demand-flex devkit ---"
+          find devkits/demand-flex -maxdepth 2 -type d 2>/dev/null | sort || echo "MISSING"
+
+      - name: Policy packages and entrypoints
+        run: |
+          for f in specification/policies/*.rego; do
+            echo "=== $f"
+            grep -nE '^package |^(default )?(violations|revenue_flows|allow|deny)' "$f" | head -20
+          done
+
+      - name: How the contract policy reads its input
+        run: |
+          grep -ohE 'input\.[a-zA-Z_.]+' \
+            specification/policies/demand-flex-contractpolicy.rego \
+            | sort -u | head -25
+
+      - name: Run the existing policy unit tests
+        run: opa test specification/policies -v
