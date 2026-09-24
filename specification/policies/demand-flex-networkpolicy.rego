@@ -12,11 +12,11 @@
 # which only makes sense once telemetry has arrived.
 #
 # Stage legend (which rule is live when):
-#   discover / catalog … 1b, 4, 5b               (need series only)
-#   select / on_select … 1b, 4, 5a, 5b           (buyer need; no seller offer yet)
-#   init / on_init …… 1b, 3, 3a, 4, 5a, 5b, 5c    (seller must now commit CAPACITY_OFFERED)
-#   confirm/on_confirm  1b, 3, 3a, 4, 5a, 5b, 5c  (same commitment rules re-checked)
-#   status / on_status  1, 1b, 2, 3, 3a, 4, 5*    (+ per-meter telemetry + grid)
+#   discover / catalog … 1b, 4, 5b, 6            (need series only)
+#   select / on_select … 1b, 4, 5a, 5b, 6        (buyer need; no seller offer yet)
+#   init / on_init …… 1b, 3, 3a, 4, 5a, 5b, 6     (seller must now commit CAPACITY_OFFERED)
+#   confirm/on_confirm  1b, 3, 3a, 4, 5a, 5b, 6   (same commitment rules re-checked)
+#   status / on_status  1, 1b, 2, 3, 3a, 4, 5*, 6 (+ per-meter telemetry + grid)
 #
 # The `violations` rule combines these checks:
 #
@@ -76,14 +76,20 @@
 #      rego, which now carries only the settlement family). All gate-only:
 #        5a. Participant roles — a contractAttributes-bearing message MUST
 #            name both a buyer and a seller.
-#        5b. DemandFlexNeed column lock — the need column set MUST be exactly
-#            {CAPACITY_REQUESTED, PRICE, SHORTFALL_PENALTY}.
-#        5c. Commitment column lock — a declared CAPACITY_OFFERED column MUST
-#            contain exactly {CAPACITY_OFFERED} (presence is 3a; this pins
-#            the contents).
+#   	 5b. DemandFlexNeed required columns. The need MUST declare
+#     	 	 CAPACITY_REQUESTED. PRICE and SHORTFALL_PENALTY are optional at
+#      		 this layer: a discovered-price event solicits bids rather than
+#       	 posting a rate and carries neither. Posted-price settlement
+#     		 requires them in its own contract policy, from confirm onward.
+#     	 	 (FC-001; 5c removed.)
 #        5d. Meter telemetry grid — each meter's telemetry `intervalPeriod`
 #            MUST match the DemandFlexNeed grid.
-#      Each self-skips when the series it inspects is absent.
+#      	Each self-skips when the series it inspects is absent.
+#
+#   6. Parallel value arrays. Within one interval, every payload's
+#      `values` array MUST be the same length, since columns are read
+#      positionally. A bid curve carries several tranches; a flat offer
+#      carries one. (FC-001, new.)
 #
 # This policy owns ALL universal structural well-formedness for demand-flex;
 # the contract rego (demand-flex-contractpolicy.rego) owns only settlement
@@ -355,29 +361,78 @@ violations contains msg if {
 	msg := "contract: no participant with role 'seller' found"
 }
 
-# 5b) DemandFlexNeed column lock (uc1 demand_flex profile) — the schema leaves
-# the need columns open; this is the hard lock. Applies to the need series
-# wherever it appears (bound contract or catalog publish). Rule 1b already
-# checks that every USED type is declared; this additionally pins the declared
-# set to exactly the uc1 columns.
+# --- FORK EDIT FC-001 --------------------------------------------------
+# Upstream  : 5b pinned DemandFlexNeed columns to exactly
+#             {CAPACITY_REQUESTED, PRICE, SHORTFALL_PENALTY};
+#             5c pinned commitment columns to exactly {CAPACITY_OFFERED}.
+# Change    : 5b now requires CAPACITY_REQUESTED by presence only.
+#             5c is removed. Rule 6 is added.
+# Rationale : An exact-set check asserts a column set is COMPLETE, which
+#             defines a product rather than testing coherence. Run against
+#             the bid-curve fixtures shipped in this same devkit, the two
+#             locks reject 11 of 12 messages before they reach their own
+#             contract policy — which implements the correct column rules
+#             for that product. All 15 curtailment fixtures pass.
+#             A discovered-price event solicits bids instead of posting a
+#             rate, so it carries no PRICE or SHORTFALL_PENALTY column at
+#             all; those are terms of posted-price settlement and now live
+#             in that product's contract policy.
+#             The P2P trading network policy uses presence checks
+#             throughout and contains no exact-set comparison on columns.
+#             DemandFlexNeed's schema states the column set is
+#             intentionally not fixed and names each profile's contract
+#             policy as the governing authority.
+# Register  : FORK-CHANGES.md FC-001
+# -----------------------------------------------------------------------
+
+# 5b) DemandFlexNeed required columns — a need MUST say what capacity is
+# being asked for. PRICE and SHORTFALL_PENALTY are deliberately NOT required:
+# a discovered-price event carries neither. Products that settle against a
+# posted price require them in their own contract policy. Rule 1b separately
+# checks that every USED type is declared.
 violations contains msg if {
 	some ra in _demand_flex_needs
 	cols := {d.payloadType | some d in ra.payloadDescriptors}
-	cols != {"CAPACITY_REQUESTED", "PRICE", "SHORTFALL_PENALTY"}
-	msg := sprintf("DemandFlexNeed columns must be exactly {CAPACITY_REQUESTED, PRICE, SHORTFALL_PENALTY}, got %v", [cols])
+	not "CAPACITY_REQUESTED" in cols
+	msg := sprintf("DemandFlexNeed must declare a CAPACITY_REQUESTED column, got %v", [cols])
 }
 
-# 5c) commitment column lock — when the seller has declared the offered column,
-# it must be EXACTLY {CAPACITY_OFFERED} (no extra or renamed columns). Presence
-# (that the column exists at all from init onward) is rule 3a; this pins its
-# contents. Self-skips when no commitmentAttributes descriptors are on the wire.
-violations contains msg if {
-	some c in input.message.contract.commitments
-	descs := c.commitmentAttributes.payloadDescriptors
-	cols := {d.payloadType | some d in descs}
-	cols != {"CAPACITY_OFFERED"}
-	msg := sprintf("commitment %s: column must be exactly {CAPACITY_OFFERED}, got %v", [object.get(c, "id", "?"), cols])
+# 5c) REMOVED by FC-001. It pinned the commitment column set to exactly
+# {CAPACITY_OFFERED}, which blocked an offer from carrying its own
+# OFFER_PRICE. Presence of CAPACITY_OFFERED from init onward is rule 3a and
+# is unchanged; the contents of the column set are a product concern.
+
+# 6) Parallel value arrays — within one interval, every payload's `values`
+# array MUST be the same length. Columns are read positionally: a bid curve
+# expresses tranches as OFFER_PRICE [1.5, 2.5] against CAPACITY_OFFERED
+# [90, 70], and a mismatch silently misaligns price from quantity. A flat
+# single-price offer is the one-entry case. This is a universal invariant —
+# positional correspondence is meaningless if the arrays differ in length.
+_interval_series contains s if {
+	some ra in _demand_flex_needs
+	s := ra
 }
+
+_interval_series contains s if {
+	some c in input.message.contract.commitments
+	s := c.commitmentAttributes
+}
+
+_interval_series contains s if {
+	some perf in input.message.contract.performance
+	some m in perf.performanceAttributes.meters
+	s := m.telemetry
+}
+
+violations contains msg if {
+	some s in _interval_series
+	some iv in s.intervals
+	lens := {count(p.values) | some p in iv.payloads}
+	count(lens) > 1
+	msg := sprintf("interval %v: parallel value arrays differ in length (%v)", [object.get(iv, "id", "?"), lens])
+}
+
+# --- end FORK EDIT FC-001 ----------------------------------------------
 
 # 5d) meter telemetry grid — each meter's telemetry intervalPeriod MUST match
 # the DemandFlexNeed grid (the two series join on interval id). Self-skips when
