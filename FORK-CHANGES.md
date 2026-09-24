@@ -46,7 +46,7 @@ if it is ever accepted.
 
 | ID | File | Change | Rationale | Status |
 |----|------|--------|-----------|--------|
-| _none yet_ | | | | |
+| FC-001 | `specification/policies/demand-flex-networkpolicy.rego`<br>`specification/policies/demand-flex-contractpolicy.rego` | Network policy: rule 5b requires `CAPACITY_REQUESTED` by presence instead of pinning the need column set exactly; rule 5c removed; new rule 6 requires parallel `values` arrays within an interval to be equal length. Contract policy: new violation requiring `PRICE` and `SHORTFALL_PENALTY` on the need from `confirm` onward. | An exact-set check asserts a column set is complete, which defines a product rather than testing coherence. The two locks reject 11 of 12 bid-curve fixtures shipped in the same devkit, before they reach their own contract policy. Posted-price terms move to the product that depends on them. Follows the P2P network policy, which uses presence checks throughout. | Applied, verified in CI |
 
 ## Files added by this fork
 
@@ -54,6 +54,24 @@ if it is ever accepted.
 |------|---------|
 | `.github/workflows/policy-checks.yml` | Runs both demand flexibility policies against every shipped fixture. Two jobs: `conformance` asserts what should be true, and must stay green; `known-defects` asserts that the documented defects are still present, so it turns red when one is fixed. |
 | `FORK-CHANGES.md` | This file. |
+
+## Known limits of these changes
+
+**Terms can still be changed, only not added late.** FC-001 requires
+posted-price terms to be complete by `confirm`. It cannot detect a term
+that is altered afterwards — a shortfall penalty of 2.00 at `confirm`
+becoming 5.00 at `on_status` produces two individually well-formed
+messages. Policy evaluation is stateless and has no memory of what was
+agreed.
+
+Closing this needs either the application comparing against its stored
+contract, or a digest of the agreed commercial terms carried in the
+contract and re-verified on each message. The devkit already uses a
+content digest for meter cohorts, so the pattern exists.
+
+This gap is pre-existing. The removed column lock prevented late
+*addition* as a side effect of pinning the set, but never prevented
+*alteration*. Relaxing it makes the gap more visible without widening it.
 
 ## Verified findings
 
