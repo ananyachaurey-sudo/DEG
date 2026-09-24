@@ -21,6 +21,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: open-policy-agent/setup-opa@v2
         with: { version: latest }
 
@@ -63,6 +65,30 @@ jobs:
         run: |
           opa test specification/policies/*.rego specification/policies/test/*.rego
 
+      - name: Diff against upstream
+        continue-on-error: true
+        run: |
+          git remote add upstream https://github.com/beckn/DEG.git || true
+          git fetch --depth=1 upstream main
+          echo "### Files changed vs upstream/main"
+          git diff --stat upstream/main || true
+
+      - name: Every fork edit is registered
+        run: |
+          IDS=$(grep -rhoE 'FORK EDIT FC-[0-9]+' \
+                  --include='*.rego' --include='*.json' --include='*.yaml' \
+                  . 2>/dev/null | grep -oE 'FC-[0-9]+' | sort -u)
+          if [ -z "$IDS" ]; then echo "no fork edits yet"; exit 0; fi
+          FAILED=0
+          for id in $IDS; do
+            if grep -q "$id" FORK-CHANGES.md; then
+              echo "  OK       $id"
+            else
+              echo "  MISSING  $id not in FORK-CHANGES.md"; FAILED=1
+            fi
+          done
+          exit $FAILED
+
   # ------------------------------------------------------------------
   # Green means the documented defects are STILL PRESENT.
   # Red here means something changed - check whether it was fixed.
@@ -92,7 +118,7 @@ jobs:
           echo "rejected $REJECTED of $TOTAL bid-curve fixtures"
           echo "rule families firing: need-lock=$NEEDLOCK commit-lock=$COMMITLOCK stage-gate=$STAGEGATE"
           FAILED=0
-          [ "$REJECTED" -gt 0 ] || { echo "  UNEXPECTED: nothing rejected - defect may be fixed"; FAILED=1; }
+          [ "$REJECTED" -gt 0 ] || { echo "  UNEXPECTED: nothing rejected"; FAILED=1; }
           [ "$NEEDLOCK$COMMITLOCK$STAGEGATE" = "111" ] \
             || { echo "  UNEXPECTED: not all three rule families fired"; FAILED=1; }
           exit $FAILED
@@ -114,7 +140,7 @@ jobs:
                           | map(select(.role=="seller")) | .[0].value')
             echo "  $f: isLast=$LAST meters_in_page=$N total=$TOT settles=$S"
             if [ "$LAST" = "false" ] && [ "$S" = "436.25" ]; then
-              echo "        DEFECT PRESENT - incomplete page produced a full settlement"
+              echo "        DEFECT PRESENT"
             else
               echo "        UNEXPECTED - behaviour changed"; FAILED=1
             fi
@@ -132,8 +158,8 @@ jobs:
           echo "  guide USAGE columns:     $GUSAGE"
           echo "  fixture USAGE columns:   $FUSAGE"
           FAILED=0
-          [ "$G525" -gt 0 ]   || { echo "  UNEXPECTED: 525 gone - guide may be fixed"; FAILED=1; }
-          [ "$G436" -eq 0 ]   || { echo "  UNEXPECTED: guide now cites the correct figure"; FAILED=1; }
+          [ "$G525" -gt 0 ]   || { echo "  UNEXPECTED: 525 gone"; FAILED=1; }
+          [ "$G436" -eq 0 ]   || { echo "  UNEXPECTED: guide now cites 436.25"; FAILED=1; }
           [ "$GUSAGE" -eq 0 ] || { echo "  UNEXPECTED: guide now shows USAGE"; FAILED=1; }
-          [ "$FUSAGE" -gt 0 ] || { echo "  UNEXPECTED: fixture lost its USAGE column"; FAILED=1; }
+          [ "$FUSAGE" -gt 0 ] || { echo "  UNEXPECTED: fixture lost USAGE"; FAILED=1; }
           exit $FAILED
