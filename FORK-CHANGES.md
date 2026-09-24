@@ -38,7 +38,8 @@ A marked block in a `.rego` file looks like this:
 Files that are new in this fork carry no markers, since the whole file
 is an addition. They are listed separately below.
 
-Each change is developed on its own branch, named after its ID, so that
+FC-001 was committed directly to main. 
+FC-002 onwards, changes are developed on a branch named after the ID, so that
 it stays independently reviewable and can be offered upstream on its own
 if it is ever accepted.
 
