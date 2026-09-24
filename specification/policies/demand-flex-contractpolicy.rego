@@ -186,6 +186,39 @@ violations contains msg if {
 	msg := sprintf("meter %s: missing USAGE at interval %d — cannot settle", [m.meterId, iv.id])
 }
 
+# --- FORK EDIT FC-001 --------------------------------------------------
+# Change    : new violation — the need must declare PRICE and
+#             SHORTFALL_PENALTY by confirm.
+# Rationale : This policy reads both per interval but never checked they
+#             were declared. It was safe only because the network policy's
+#             column lock guaranteed them. That lock is now a presence
+#             check on CAPACITY_REQUESTED alone, so the requirement moves
+#             here, to the product that actually depends on it.
+#             Stage-gated to confirm onward: terms may still be assembled
+#             during discovery and negotiation — a discom may add a
+#             shortfall penalty at on_init — but must be complete by the
+#             time the contract is signed.
+#             Known limit: this stops a term arriving late, not one being
+#             changed. Policy evaluation is stateless, so a penalty rate
+#             altered between confirm and on_status is invisible here.
+#             Detecting that needs a digest of agreed terms carried in the
+#             contract. Pre-existing; see FORK-CHANGES.md.
+# Register  : FORK-CHANGES.md FC-001
+# -----------------------------------------------------------------------
+violations contains msg if {
+	input.context.action in {
+		"confirm", "on_confirm",
+		"status", "on_status",
+		"update", "on_update",
+	}
+	cols := {d.payloadType | some d in _need.payloadDescriptors}
+	some required in {"PRICE", "SHORTFALL_PENALTY"}
+	not required in cols
+	msg := sprintf("posted-price settlement requires a %s column on DemandFlexNeed by confirm, got %v", [required, cols])
+}
+
+# --- end FORK EDIT FC-001 ----------------------------------------------
+
 # S3 — buyer/seller revenue flows must net to zero
 violations contains msg if {
 	not net_zero_ok
