@@ -38,7 +38,6 @@ jobs:
           echo "=== done ==="
 
       - name: Every uc1 fixture passes the network policy
-        continue-on-error: true
         run: |
           FAILED=0
           for f in $UC1/*.json; do
@@ -54,7 +53,6 @@ jobs:
           exit $FAILED
 
       - name: Settlement equals 436.25
-        continue-on-error: true
         run: |
           FAILED=0
           for f in on-status-response-settled.json on-status-response-actuals.json; do
@@ -114,10 +112,9 @@ jobs:
       - uses: open-policy-agent/setup-opa@v2
         with: { version: latest }
 
-      - name: "D1 - what the network policy now says about bid-curve payloads"
-        continue-on-error: true
+      - name: D1 bid-curve payloads against the network policy
         run: |
-          REJECTED=0; TOTAL=0
+          REJECTED=0; TOTAL=0; OTHER=0
           for f in $UC2/*.json; do
             TOTAL=$((TOTAL+1))
             V=$(opa eval -f json -d $NET -i "$f" \
@@ -129,11 +126,29 @@ jobs:
               REJECTED=$((REJECTED+1))
               echo "  FAIL  $(basename $f)"
               echo "$V" | jq -r '.[]' | sed 's/^/          /'
+              # anything other than the rule 3a stage gate is unexpected
+              echo "$V" | jq -r '.[]' \
+                | grep -v "requires a CAPACITY_OFFERED column" \
+                | grep -q . && OTHER=$((OTHER+1))
             fi
           done
           echo
           echo "rejected $REJECTED of $TOTAL"
 
+          FAILED=0
+          if [ "$REJECTED" -ne 3 ]; then
+            echo "  ASSERT FAILED: expected exactly 3 rejections, got $REJECTED"
+            echo "  Fewer means the rule 3a fixtures were fixed (see FC-002)."
+            echo "  More means something regressed."
+            FAILED=1
+          fi
+          if [ "$OTHER" -ne 0 ]; then
+            echo "  ASSERT FAILED: $OTHER fixture(s) rejected for a reason other"
+            echo "  than the rule 3a stage gate. The column locks should be gone."
+            FAILED=1
+          fi
+          exit $FAILED
+          
       - name: "D2 - a partial page still settles to a full figure"
         run: |
           FAILED=0
