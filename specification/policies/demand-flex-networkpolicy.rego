@@ -385,51 +385,50 @@ violations contains msg if {
 # Register  : FORK-CHANGES.md FC-001
 # -----------------------------------------------------------------------
 
-# 5b) DemandFlexNeed required columns — a need MUST say what capacity is
-# being asked for. PRICE and SHORTFALL_PENALTY are deliberately NOT required:
-# a discovered-price event carries neither. Products that settle against a
-# posted price require them in their own contract policy. Rule 1b separately
-# checks that every USED type is declared.
-violations contains msg if {
-	some ra in _demand_flex_needs
-	cols := {d.payloadType | some d in ra.payloadDescriptors}
-	not "CAPACITY_REQUESTED" in cols
-	msg := sprintf("DemandFlexNeed must declare a CAPACITY_REQUESTED column, got %v", [cols])
+# --- FORK EDIT FC-001 --------------------------------------------------
+# Upstream  : test_need_column_lock_violation asserted that an extra
+#             column on DemandFlexNeed is a violation.
+#             test_offered_column_lock_violation asserted that a
+#             commitment column other than CAPACITY_OFFERED is a violation.
+# Change    : both replaced. 5b now checks presence of CAPACITY_REQUESTED;
+#             5c is removed, so extra commitment columns are permitted.
+# Register  : FORK-CHANGES.md FC-001
+# -----------------------------------------------------------------------
+
+# 5b) DemandFlexNeed missing CAPACITY_REQUESTED → violation
+test_need_missing_capacity_requested if {
+	bad := json.patch(_need2, [{"op": "replace", "path": "/payloadDescriptors/0/payloadType", "value": "SOMETHING_ELSE"}])
+	vs := violations with input as _commit_input(bad, _offered2)
+	some v in vs
+	contains(v, "must declare a CAPACITY_REQUESTED column")
 }
 
-# 5c) REMOVED by FC-001. It pinned the commitment column set to exactly
-# {CAPACITY_OFFERED}, which blocked an offer from carrying its own
-# OFFER_PRICE. Presence of CAPACITY_OFFERED from init onward is rule 3a and
-# is unchanged; the contents of the column set are a product concern.
-
-# 6) Parallel value arrays — within one interval, every payload's `values`
-# array MUST be the same length. Columns are read positionally: a bid curve
-# expresses tranches as OFFER_PRICE [1.5, 2.5] against CAPACITY_OFFERED
-# [90, 70], and a mismatch silently misaligns price from quantity. A flat
-# single-price offer is the one-entry case. This is a universal invariant —
-# positional correspondence is meaningless if the arrays differ in length.
-_interval_series contains s if {
-	some ra in _demand_flex_needs
-	s := ra
+# 5b) an extra column on the need is now PERMITTED — products define their
+# own column sets in their contract policy, not here.
+test_need_extra_column_allowed if {
+	extra := json.patch(_need2, [{"op": "add", "path": "/payloadDescriptors/-", "value": {"payloadType": "EXTRA"}}])
+	vs := violations with input as _commit_input(extra, _offered2)
+	every v in vs {
+		not contains(v, "CAPACITY_REQUESTED column")
+	}
 }
 
-_interval_series contains s if {
-	some c in input.message.contract.commitments
-	s := c.commitmentAttributes
+# 5c removed) a commitment carrying OFFER_PRICE alongside CAPACITY_OFFERED
+# is now permitted — this is how a discovered-price bid is expressed.
+test_offered_extra_column_allowed if {
+	withprice := json.patch(_offered2, [{"op": "add", "path": "/payloadDescriptors/-", "value": {"payloadType": "OFFER_PRICE"}}])
+	vs := violations with input as _commit_input(_need2, withprice)
+	every v in vs {
+		not contains(v, "must be exactly")
+	}
 }
 
-_interval_series contains s if {
-	some perf in input.message.contract.performance
-	some m in perf.performanceAttributes.meters
-	s := m.telemetry
-}
-
-violations contains msg if {
-	some s in _interval_series
-	some iv in s.intervals
-	lens := {count(p.values) | some p in iv.payloads}
-	count(lens) > 1
-	msg := sprintf("interval %v: parallel value arrays differ in length (%v)", [object.get(iv, "id", "?"), lens])
+# 6) parallel value arrays of differing length within one interval → violation
+test_parallel_array_length_mismatch if {
+	bad := json.patch(_offered2, [{"op": "replace", "path": "/intervals/0/payloads/0/values", "value": [1, 2, 3]}])
+	vs := violations with input as _commit_input(_need2, bad)
+	some v in vs
+	contains(v, "parallel value arrays differ in length")
 }
 
 # --- end FORK EDIT FC-001 ----------------------------------------------
