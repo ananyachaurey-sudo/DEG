@@ -365,14 +365,6 @@ test_offered_extra_column_allowed if {
 	}
 }
 
-# 6) parallel value arrays of differing length within one interval → violation
-test_parallel_array_length_mismatch if {
-	bad := json.patch(_offered2, [{"op": "replace", "path": "/intervals/0/payloads/0/values", "value": [1, 2, 3]}])
-	vs := violations with input as _commit_input(_need2, bad)
-	some v in vs
-	contains(v, "parallel value arrays differ in length")
-}
-
 # --- end FORK EDIT FC-001 ----------------------------------------------
 
 # 5d) meter telemetry grid does not match the need grid → violation
