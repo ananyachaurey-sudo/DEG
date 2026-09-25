@@ -47,7 +47,20 @@ if it is ever accepted.
 
 | ID | File | Change | Rationale | Status |
 |----|------|--------|-----------|--------|
-| FC-001 | `specification/policies/demand-flex-networkpolicy.rego`<br>`specification/policies/demand-flex-contractpolicy.rego` | Network policy: rule 5b requires `CAPACITY_REQUESTED` by presence instead of pinning the need column set exactly; rule 5c removed; A rule requiring parallel values arrays to be equal length was added and then withdrawn: a bid curve carries several tranches while its clearing result is a scalar, so differing lengths within one interval are legitimate. Positional correspondence holds between specific declared columns, which is product knowledge. Deferred to the bid-curve contract policy as FC-003. Contract policy: new violation requiring `PRICE` and `SHORTFALL_PENALTY` on the need from `confirm` onward. | An exact-set check asserts a column set is complete, which defines a product rather than testing coherence. The two locks reject 11 of 12 bid-curve fixtures shipped in the same devkit, before they reach their own contract policy. Posted-price terms move to the product that depends on them. Follows the P2P network policy, which uses presence checks throughout. | Applied, verified in CI |
+| FC-001 | `specification/policies/demand-flex-networkpolicy.rego`<br>`specification/policies/demand-flex-contractpolicy.rego`<br>`specification/policies/test/demand-flex-networkpolicy_test.rego` | Network policy: rule 5b requires `CAPACITY_REQUESTED` by presence instead of pinning the need column set exactly; rule 5c removed. Contract policy: new violation requiring `PRICE` and `SHORTFALL_PENALTY` on the need from `confirm` onward. Tests: the two asserting the removed locks replaced with presence and permitted-extra-column tests. | An exact-set check asserts a column set is complete, which defines a product rather than testing coherence. The two locks rejected 11 of 12 bid-curve fixtures shipped in the same devkit before they reached their own contract policy. Posted-price terms move to the product that depends on them. Follows the P2P network policy, which uses presence checks throughout. | Applied. Bid-curve rejections 11 → 3; all 15 curtailment fixtures still pass; settlement unchanged at 436.25; unit tests 114 pass. |
+
+**A rule withdrawn during FC-001.** A network rule requiring all parallel
+`values` arrays within an interval to be equal length was added, then
+removed. A bid curve carries several tranches (`OFFER_PRICE` and
+`CAPACITY_OFFERED`, four entries each) while its clearing result is a
+scalar (`CLEARING_PRICE`, one entry), so differing lengths in one interval
+are legitimate. Positional correspondence holds between specific declared
+columns, which is product knowledge, not a universal invariant. Deferred
+to the bid-curve contract policy as FC-003.
+
+The test that catches this: *would this rule still be true for a product
+nobody has invented yet?* It is the same test that identified the original
+defect, and it is worth applying to every network-layer rule.
 
 ## Files added by this fork
 
