@@ -114,7 +114,7 @@ jobs:
       - uses: open-policy-agent/setup-opa@v2
         with: { version: latest }
 
-           - name: "D1 - what the network policy now says about bid-curve payloads"
+      - name: "D1 - what the network policy now says about bid-curve payloads"
         continue-on-error: true
         run: |
           REJECTED=0; TOTAL=0
