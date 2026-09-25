@@ -12,11 +12,11 @@
 # which only makes sense once telemetry has arrived.
 #
 # Stage legend (which rule is live when):
-#   discover / catalog … 1b, 4, 5b, 6            (need series only)
-#   select / on_select … 1b, 4, 5a, 5b, 6        (buyer need; no seller offer yet)
-#   init / on_init …… 1b, 3, 3a, 4, 5a, 5b, 6     (seller must now commit CAPACITY_OFFERED)
-#   confirm/on_confirm  1b, 3, 3a, 4, 5a, 5b, 6   (same commitment rules re-checked)
-#   status / on_status  1, 1b, 2, 3, 3a, 4, 5*, 6 (+ per-meter telemetry + grid)
+#   discover / catalog … 1b, 4, 5b            (need series only)
+#   select / on_select … 1b, 4, 5a, 5b        (buyer need; no seller offer yet)
+#   init / on_init …… 1b, 3, 3a, 4, 5a, 5b     (seller must now commit CAPACITY_OFFERED)
+#   confirm/on_confirm  1b, 3, 3a, 4, 5a, 5b   (same commitment rules re-checked)
+#   status / on_status  1, 1b, 2, 3, 3a, 4, 5* (+ per-meter telemetry + grid)
 #
 # The `violations` rule combines these checks:
 #
@@ -85,11 +85,6 @@
 #        5d. Meter telemetry grid — each meter's telemetry `intervalPeriod`
 #            MUST match the DemandFlexNeed grid.
 #      	Each self-skips when the series it inspects is absent.
-#
-#   6. Parallel value arrays. Within one interval, every payload's
-#      `values` array MUST be the same length, since columns are read
-#      positionally. A bid curve carries several tranches; a flat offer
-#      carries one. (FC-001, new.)
 #
 # This policy owns ALL universal structural well-formedness for demand-flex;
 # the contract rego (demand-flex-contractpolicy.rego) owns only settlement
@@ -401,36 +396,6 @@ violations contains msg if {
 # {CAPACITY_OFFERED}, which blocked an offer from carrying its own
 # OFFER_PRICE. Presence of CAPACITY_OFFERED from init onward is rule 3a and
 # is unchanged; the contents of the column set are a product concern.
-
-# 6) Parallel value arrays — within one interval, every payload's `values`
-# array MUST be the same length. Columns are read positionally: a bid curve
-# expresses tranches as OFFER_PRICE [1.5, 2.5] against CAPACITY_OFFERED
-# [90, 70], and a mismatch silently misaligns price from quantity. A flat
-# single-price offer is the one-entry case. This is a universal invariant —
-# positional correspondence is meaningless if the arrays differ in length.
-_interval_series contains s if {
-	some ra in _demand_flex_needs
-	s := ra
-}
-
-_interval_series contains s if {
-	some c in input.message.contract.commitments
-	s := c.commitmentAttributes
-}
-
-_interval_series contains s if {
-	some perf in input.message.contract.performance
-	some m in perf.performanceAttributes.meters
-	s := m.telemetry
-}
-
-violations contains msg if {
-	some s in _interval_series
-	some iv in s.intervals
-	lens := {count(p.values) | some p in iv.payloads}
-	count(lens) > 1
-	msg := sprintf("interval %v: parallel value arrays differ in length (%v)", [object.get(iv, "id", "?"), lens])
-}
 
 # --- end FORK EDIT FC-001 ----------------------------------------------
 
