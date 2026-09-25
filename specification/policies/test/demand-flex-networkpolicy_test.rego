@@ -327,21 +327,53 @@ test_roles_self_skip_without_contract_attributes if {
 	})
 }
 
-# 5b) DemandFlexNeed carrying an extra column → violation
-test_need_column_lock_violation if {
-	extra := json.patch(_need2, [{"op": "add", "path": "/payloadDescriptors/-", "value": {"payloadType": "EXTRA"}}])
-	vs := violations with input as _commit_input(extra, _offered2)
+# --- FORK EDIT FC-001 --------------------------------------------------
+# Upstream  : test_need_column_lock_violation asserted that an extra
+#             column on DemandFlexNeed is a violation.
+#             test_offered_column_lock_violation asserted that a
+#             commitment column other than CAPACITY_OFFERED is a violation.
+# Change    : both replaced. 5b now checks presence of CAPACITY_REQUESTED;
+#             5c is removed, so extra commitment columns are permitted.
+# Register  : FORK-CHANGES.md FC-001
+# -----------------------------------------------------------------------
+
+# 5b) DemandFlexNeed missing CAPACITY_REQUESTED → violation
+test_need_missing_capacity_requested if {
+	bad := json.patch(_need2, [{"op": "replace", "path": "/payloadDescriptors/0/payloadType", "value": "SOMETHING_ELSE"}])
+	vs := violations with input as _commit_input(bad, _offered2)
 	some v in vs
-	contains(v, "DemandFlexNeed columns must be exactly")
+	contains(v, "must declare a CAPACITY_REQUESTED column")
 }
 
-# 5c) commitment column declared as something other than CAPACITY_OFFERED → violation
-test_offered_column_lock_violation if {
-	bad := json.patch(_offered2, [{"op": "replace", "path": "/payloadDescriptors/0/payloadType", "value": "CAPACITY_PROMISED"}])
+# 5b) an extra column on the need is now PERMITTED — products define their
+# own column sets in their contract policy, not here.
+test_need_extra_column_allowed if {
+	extra := json.patch(_need2, [{"op": "add", "path": "/payloadDescriptors/-", "value": {"payloadType": "EXTRA"}}])
+	vs := violations with input as _commit_input(extra, _offered2)
+	every v in vs {
+		not contains(v, "CAPACITY_REQUESTED column")
+	}
+}
+
+# 5c removed) a commitment carrying OFFER_PRICE alongside CAPACITY_OFFERED
+# is now permitted — this is how a discovered-price bid is expressed.
+test_offered_extra_column_allowed if {
+	withprice := json.patch(_offered2, [{"op": "add", "path": "/payloadDescriptors/-", "value": {"payloadType": "OFFER_PRICE"}}])
+	vs := violations with input as _commit_input(_need2, withprice)
+	every v in vs {
+		not contains(v, "must be exactly")
+	}
+}
+
+# 6) parallel value arrays of differing length within one interval → violation
+test_parallel_array_length_mismatch if {
+	bad := json.patch(_offered2, [{"op": "replace", "path": "/intervals/0/payloads/0/values", "value": [1, 2, 3]}])
 	vs := violations with input as _commit_input(_need2, bad)
 	some v in vs
-	contains(v, "must be exactly {CAPACITY_OFFERED}")
+	contains(v, "parallel value arrays differ in length")
 }
+
+# --- end FORK EDIT FC-001 ----------------------------------------------
 
 # 5d) meter telemetry grid does not match the need grid → violation
 test_meter_grid_mismatch if {
