@@ -54,7 +54,23 @@ reintroduced while FC-001 was being written (see Known limits).
 
 | ID | File | Change | Rationale | Status |
 |----|------|--------|-----------|--------|
-| _none yet_ | | | | |
+| FC-001 | `specification/policies/demand-flex-networkpolicy.rego`<br>`specification/policies/test/demand-flex-networkpolicy_test.rego` | Rule 5b requires `CAPACITY_REQUESTED` by presence instead of pinning the need column set exactly. Rule 5c removed. Stage legend and rule index updated. Two tests asserting the removed locks replaced with three covering presence and permitted extra columns. | An exact-set check asserts a column set is complete, which defines a product rather than testing coherence. The two locks rejected 11 of 12 bid-curve fixtures shipped in the same devkit, before they reached the bid-curve contract policy that implements the correct rules for that product. Price and penalty are product terms and move to the product that depends on them. Follows the P2P network policy, which uses presence checks throughout. | Applied on `fc-001-column-presence`. Verified: bid-curve rejections 11 → 3, all three now rule 3a; 15 of 15 curtailment fixtures unchanged; settlement unchanged at 436.25; unit tests 113 → 114. |
+
+### Carried over from FC-001
+
+Three bid-curve fixtures remain rejected after FC-001, all by rule 3a,
+all for the same reason — no `CAPACITY_OFFERED` column is declared at
+all:
+
+- `uc2-bid-curve-pac/examples/init-request.json`
+- `uc2-bid-curve-pac/examples/on-init-response.json`
+- `uc2-bid-curve-pac/examples/on-status-response-resource-telemetry.json`
+
+Rule 3a is correct and unchanged: an aggregator that reaches `init`
+without stating what it is offering has offered nothing, and the utility
+cannot assemble a draft contract at `on_init` from it. The fixtures are
+the defect. Addressed as FC-002, which also moves bidding in a
+discovered-price event from `confirm` to `init`.
 
 ## Files added by this fork
 
