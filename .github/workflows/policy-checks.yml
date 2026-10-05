@@ -1,0 +1,280 @@
+# ---------------------------------------------------------------------------
+# DEG policy checks
+#
+# Runs the two demand-flexibility Rego policies against every example payload
+# shipped in the devkit, and asserts the results. Nothing here is a Beckn node:
+# OPA evaluates a policy against a JSON input and returns an answer, which is
+# pure computation and needs no services running.
+#
+# Two jobs, with different purposes:
+#   conformance   - asserts what SHOULD be true. Red = a regression.
+#   known-defects - asserts the CURRENT state of documented defects.
+#                   Red = something changed; check whether it was fixed.
+# ---------------------------------------------------------------------------
+
+name: DEG policy checks
+
+# When to run. `push` fires on every commit; `workflow_dispatch` adds a
+# "Run workflow" button in the Actions tab for manual re-runs.
+on:
+  workflow_dispatch:
+  push:
+
+# Paths used repeatedly below, declared once so a repo reorganisation
+# only needs changing here. Referenced in shell as $UC1, $NET, and so on.
+env:
+  UC1: devkits/demand-flex/uc1-bdr-w-baselining/examples   # posted-price fixtures
+  UC2: devkits/demand-flex/uc2-bid-curve-pac/examples      # discovered-price fixtures
+  NET: specification/policies/demand-flex-networkpolicy.rego   # shared, both products
+  CON: specification/policies/demand-flex-contractpolicy.rego  # posted-price settlement
+  GUIDE: docs/implementation-guides/v2/Demand_Flexibility/Demand_Flexibility.md
+
+jobs:
+
+  # =========================================================================
+  # CONFORMANCE - must stay green
+  # =========================================================================
+  conformance:
+    name: Conformance
+    runs-on: ubuntu-latest          # a fresh Ubuntu machine, provided by GitHub
+    steps:
+
+      # Copy the repository onto the machine.
+      # fetch-depth: 0 pulls full history, which the upstream diff step needs —
+      # the default shallow clone has nothing to compare against.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Install the Open Policy Agent binary, which evaluates .rego files.
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: latest
+
+      # ---------------------------------------------------------------------
+      # Compile check. `opa check` parses and type-checks without running
+      # anything, so a syntax error is reported here with a file and line
+      # rather than surfacing as a mysterious null three steps later.
+      # `|| true` and continue-on-error keep this step green so it always
+      # reports, even when the policy is broken.
+      # ---------------------------------------------------------------------
+      - name: Does the policy compile
+        continue-on-error: true
+        run: |
+          echo "=== network policy ==="
+          opa check $NET || true
+          echo "=== contract policy ==="
+          opa check $CON || true
+          echo "=== network policy plus its tests ==="
+          opa check $NET specification/policies/test/demand-flex-networkpolicy_test.rego || true
+          echo "=== done ==="
+
+      # ---------------------------------------------------------------------
+      # Every posted-price fixture must pass the network policy cleanly.
+      #
+      # `opa eval -d <policy> -i <input>` evaluates the policy against one
+      # payload. The query asks for the `violations` set: empty means the
+      # message is well formed. jq digs the value out of OPA's JSON wrapper.
+      #
+      # FAILED accumulates across the loop so every fixture is reported
+      # before the step exits, rather than stopping at the first failure.
+      # ---------------------------------------------------------------------
+      - name: Every uc1 fixture passes the network policy
+        run: |
+          FAILED=0
+          for f in $UC1/*.json; do
+            V=$(opa eval -f json -d $NET -i "$f" \
+                 'data.deg.policy.demand_flex_network.violations' \
+                 | jq -c '.result[0].expressions[0].value')
+            if [ "$V" = "[]" ]; then
+              echo "  PASS  $(basename $f)"
+            else
+              echo "  FAIL  $(basename $f) -> $V"; FAILED=1
+            fi
+          done
+          exit $FAILED
+
+      # ---------------------------------------------------------------------
+      # Settlement must come out at exactly 436.25 INR.
+      #
+      # This is the headline number: two half-hour slots, two meters, from
+      # the shipped example. The implementation guide claims 525, which the
+      # policy has never produced and which the guide's own stated terms
+      # cannot reach. Asserting it here is what stops documentation and code
+      # drifting apart again.
+      #
+      # revenue_flows returns one entry per role, so the seller receives
+      # +436.25 and the buyer -436.25. Both are checked: a net-zero error
+      # would show as a mismatched pair.
+      # ---------------------------------------------------------------------
+      - name: Settlement equals 436.25
+        run: |
+          FAILED=0
+          for f in on-status-response-settled.json on-status-response-actuals.json; do
+            S=$(opa eval -f json -d $CON -i "$UC1/$f" \
+                 'data.deg.contracts.demand_flex.revenue_flows' \
+                 | jq -r '.result[0].expressions[0].value
+                          | map(select(.role=="seller")) | .[0].value')
+            B=$(opa eval -f json -d $CON -i "$UC1/$f" \
+                 'data.deg.contracts.demand_flex.revenue_flows' \
+                 | jq -r '.result[0].expressions[0].value
+                          | map(select(.role=="buyer")) | .[0].value')
+            if [ "$S" = "436.25" ] && [ "$B" = "-436.25" ]; then
+              echo "  PASS  $f  seller=$S buyer=$B"
+            else
+              echo "  FAIL  $f  seller=$S buyer=$B (expected 436.25 / -436.25)"; FAILED=1
+            fi
+          done
+          exit $FAILED
+
+      # ---------------------------------------------------------------------
+      # The repository's own Rego unit tests — roughly 113 of them across the
+      # demand-flex and P2P policies, mostly negative cases asserting that
+      # malformed input is rejected. Files are listed explicitly rather than
+      # pointing at the folder, because `opa test` on the folder also tries to
+      # load the example JSON under discom-policy-guide/ as data documents,
+      # where they collide and produce a merge error.
+      # ---------------------------------------------------------------------
+      - name: Existing policy unit tests
+        run: |
+          opa test specification/policies/*.rego specification/policies/test/*.rego
+
+      # ---------------------------------------------------------------------
+      # Print how this fork differs from upstream. Adds beckn/DEG as a remote,
+      # fetches it, and diffs. Purely informational — it gives the Actions log
+      # an always-current summary of divergence, so nobody has to clone to see
+      # what changed. Allowed to fail without failing the job.
+      # ---------------------------------------------------------------------
+      - name: Diff against upstream
+        continue-on-error: true
+        run: |
+          git remote add upstream https://github.com/beckn/DEG.git || true
+          git fetch --depth=1 upstream main
+          echo "### Files changed vs upstream/main"
+          git diff --stat upstream/main || true
+
+      # ---------------------------------------------------------------------
+      # Documentation guard. Every fork edit carries a marker of the form
+      # "FORK EDIT FC-nnn" in the file it changes. This greps the repo for
+      # those markers and fails if any ID is missing from FORK-CHANGES.md.
+      #
+      # The point: an undocumented change turns the build red. The grep
+      # pattern itself contains no literal ID, so it does not match this file.
+      # ---------------------------------------------------------------------
+      - name: Every fork edit is registered
+        run: |
+          IDS=$(grep -rhoE 'FORK EDIT FC-[0-9]+' \
+                  --include='*.rego' --include='*.json' --include='*.yaml' \
+                  . 2>/dev/null | grep -oE 'FC-[0-9]+' | sort -u)
+          if [ -z "$IDS" ]; then echo "no fork edits yet"; exit 0; fi
+          FAILED=0
+          for id in $IDS; do
+            if grep -q "$id" FORK-CHANGES.md; then
+              echo "  OK       $id"
+            else
+              echo "  MISSING  $id not in FORK-CHANGES.md"; FAILED=1
+            fi
+          done
+          exit $FAILED
+
+  # =========================================================================
+  # KNOWN DEFECTS - asserts the current state, not the desired one
+  #
+  # Green means reality still matches what we documented. These are
+  # characterisation tests: they turn findings into a tripwire rather than
+  # a claim in a document. Red means something moved — usually because a
+  # defect was fixed, in which case update the expected value.
+  # =========================================================================
+  known-defects:
+    name: Known defects
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: open-policy-agent/setup-opa@v2
+        with:
+          version: latest
+
+      # ---------------------------------------------------------------------
+      # D1 - the shared network policy rejects discovered-price payloads.
+      #
+      # Two rules compare column sets with exact equality, and a third
+      # requires the committed-capacity column at a fixed stage. All three
+      # encode the posted-price product's vocabulary in a policy that every
+      # participant loads regardless of product. The rejected messages never
+      # reach the bid-curve contract policy, which implements the correct
+      # column rules for that product.
+      #
+      # Every violation is printed, so a change in WHICH rule fires is
+      # visible and not just a change in the count.
+      #
+      # Expected: 11 of 12 rejected at upstream 54a5c7b.
+      # Set to 3 once FC-001 merges.
+      # ---------------------------------------------------------------------
+      - name: D1 bid-curve payloads against the network policy
+        run: |
+          REJECTED=0; TOTAL=0
+          for f in $UC2/*.json; do
+            TOTAL=$((TOTAL+1))
+            V=$(opa eval -f json -d $NET -i "$f" \
+                 'data.deg.policy.demand_flex_network.violations' \
+                 | jq -c '.result[0].expressions[0].value')
+            if [ "$V" = "[]" ]; then
+              echo "  PASS  $(basename $f)"
+            else
+              REJECTED=$((REJECTED+1))
+              echo "  FAIL  $(basename $f)"
+              echo "$V" | jq -r '.[]' | sed 's/^/          /'
+            fi
+          done
+          echo
+          echo "rejected $REJECTED of $TOTAL"
+          if [ "$REJECTED" -ne 11 ]; then
+            echo "  ASSERT FAILED: expected 11 rejections, got $REJECTED"
+            echo "  Set this to 3 once FC-001 merges."
+            exit 1
+          fi
+
+      # ---------------------------------------------------------------------
+      # D2 - settlement runs on an incomplete page.
+      #
+      # Performance records can be paginated for cohorts in the thousands.
+      # Both paginated fixtures declare isLast=false against a stated total of
+      # 12,000 meters, carry 2 meters, and still produce a full settlement of
+      # 436.25. One is not even the first page. The contract policy has no
+      # pagination awareness: no last-page check, no collection-id check.
+      #
+      # Reports rather than asserts, since the shape of the fix is not settled.
+      # ---------------------------------------------------------------------
+      - name: D2 partial page settlement
+        continue-on-error: true
+        run: |
+          for f in on-status-response-actuals-paged-push.json \
+                   on-status-response-actuals-paged-pull.json; do
+            LAST=$(jq -r '[.message.contract.performance[]?
+                          .performanceAttributes.pageInfo.isLast][0]' "$UC1/$f")
+            N=$(jq -r '[.message.contract.performance[]?
+                        .performanceAttributes.meters[]?.meterId] | length' "$UC1/$f")
+            TOT=$(jq -r '[.message.contract.performance[]?
+                          .performanceAttributes.pageInfo.total][0]' "$UC1/$f")
+            S=$(opa eval -f json -d $CON -i "$UC1/$f" \
+                 'data.deg.contracts.demand_flex.revenue_flows' \
+                 | jq -r '.result[0].expressions[0].value
+                          | map(select(.role=="seller")) | .[0].value')
+            echo "  $f: isLast=$LAST meters=$N total=$TOT settles=$S"
+          done
+
+      # ---------------------------------------------------------------------
+      # D3 - the implementation guide contradicts the fixtures.
+      #
+      # Counts occurrences rather than evaluating anything. The guide cites
+      # 525 and never 436.25, and its worked examples carry no USAGE column
+      # at all — so none of them could settle — while the fixtures do.
+      # ---------------------------------------------------------------------
+      - name: D3 guide versus fixtures
+        continue-on-error: true
+        run: |
+          echo "  guide mentions 525:    $(grep -c '525' $GUIDE || true)"
+          echo "  guide mentions 436.25: $(grep -c '436.25' $GUIDE || true)"
+          echo "  guide USAGE columns:   $(grep -c '"USAGE"' $GUIDE || true)"
+          echo "  fixture USAGE columns: $(grep -c '"USAGE"' $UC1/on-status-response-actuals.json || true)"
