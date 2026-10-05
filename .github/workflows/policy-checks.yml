@@ -208,8 +208,8 @@ jobs:
       # Every violation is printed, so a change in WHICH rule fires is
       # visible and not just a change in the count.
       #
-      # Expected: 11 of 12 rejected at upstream 54a5c7b.
-      # Set to 3 once FC-001 merges.
+      # Expected: 3 of 12 rejected, all rule 3a, after FC-001.
+      # Set to 0 once FC-002 lands.
       # ---------------------------------------------------------------------
       - name: D1 bid-curve payloads against the network policy
         run: |
@@ -229,11 +229,30 @@ jobs:
           done
           echo
           echo "rejected $REJECTED of $TOTAL"
-          if [ "$REJECTED" -ne 11 ]; then
-            echo "  ASSERT FAILED: expected 11 rejections, got $REJECTED"
-            echo "  Set this to 3 once FC-001 merges."
-            exit 1
+          FAILED=0
+          if [ "$REJECTED" -ne 3 ]; then
+            echo "  ASSERT FAILED: expected 3 rejections, got $REJECTED"
+            echo "  Fewer means the rule 3a fixtures were fixed — see FC-002."
+            echo "  More means something regressed."
+            FAILED=1
           fi
+          # The three expected rejections are all rule 3a (no CAPACITY_OFFERED
+          # column declared). Anything rejected for another reason means a
+          # column lock has returned — catch it even if the count is right.
+          OTHER=0
+          for f in $UC2/*.json; do
+            opa eval -f json -d $NET -i "$f" \
+              'data.deg.policy.demand_flex_network.violations' \
+              | jq -r '.result[0].expressions[0].value[]?' \
+              | grep -v "requires a CAPACITY_OFFERED column" \
+              | grep -q . && OTHER=$((OTHER+1))
+          done
+          if [ "$OTHER" -ne 0 ]; then
+            echo "  ASSERT FAILED: $OTHER fixture(s) rejected for a reason other"
+            echo "  than the rule 3a stage gate. The column locks should be gone."
+            FAILED=1
+          fi
+          exit $FAILED
 
       # ---------------------------------------------------------------------
       # D2 - settlement runs on an incomplete page.
