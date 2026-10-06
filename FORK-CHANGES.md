@@ -55,6 +55,7 @@ reintroduced while FC-001 was being written (see Known limits).
 | ID | File | Change | Rationale | Status |
 |----|------|--------|-----------|--------|
 | FC-001 | `specification/policies/demand-flex-networkpolicy.rego`<br>`specification/policies/test/demand-flex-networkpolicy_test.rego` | Rule 5b requires `CAPACITY_REQUESTED` by presence instead of pinning the need column set exactly. Rule 5c removed. Stage legend and rule index updated. Two tests asserting the removed locks replaced with three covering presence and permitted extra columns. | An exact-set check asserts a column set is complete, which defines a product rather than testing coherence. The two locks rejected 11 of 12 bid-curve fixtures shipped in the same devkit, before they reached the bid-curve contract policy that implements the correct rules for that product. Price and penalty are product terms and move to the product that depends on them. Follows the P2P network policy, which uses presence checks throughout. | Applied on `fc-001-column-presence`. Verified: bid-curve rejections 11 → 3, all three now rule 3a; 15 of 15 curtailment fixtures unchanged; settlement unchanged at 436.25; unit tests 113 → 114. |
+| FC-002 | `devkits/demand-flex/uc2-bid-curve-pac/examples/init-request.json`<br>`…/on-init-response.json`<br>`…/on-status-response-resource-telemetry.json` | Added a `commitmentAttributes` time series declaring `OFFER_PRICE` and `CAPACITY_OFFERED`, copied from `confirm-request.json` and sharing the same interval grid. | **A design decision, not only a fixture repair.** Rule 3a requires `CAPACITY_OFFERED` from `init` onward. These three fixtures declared no commitment block at all, so a discovered-price flow reached `init` without stating what was being offered — and the utility cannot assemble a draft contract at `on_init` from nothing. This moves bidding from `confirm` to `init`. JSON carries no comments, so this row is the only in-repo record of the reasoning. | Applied on `fc-002-bid-at-init` |
 
 ### Carried over from FC-001
 
@@ -71,6 +72,26 @@ without stating what it is offering has offered nothing, and the utility
 cannot assemble a draft contract at `on_init` from it. The fixtures are
 the defect. Addressed as FC-002, which also moves bidding in a
 discovered-price event from `confirm` to `init`.
+
+### The discovered-price flow after FC-002
+
+1. Utility publishes a need carrying capacity only — no posted price
+2. Aggregator discovers it and sees there are no pricing terms
+3. `select` / `on_select` returns firm non-price terms
+4. Aggregator bids at `init` — capacity and price together
+5. Utility echoes the bid in a draft contract at `on_init`
+6. Aggregator commits at `confirm`
+7. Utility clears or declines at `on_confirm`
+
+The aggregator signs before knowing the clearing outcome. That is correct
+auction behaviour — a withdrawable bid would be a free option. The
+aggregator is protected by the pay-as-clear invariant already enforced in
+`demand-flex-pac-contractpolicy.rego`: the clearing price must be at least
+the cheapest ask whose paired capacity covers the cleared quantity, and the
+bid curve travels in the same contract, so the arithmetic can be checked
+against the aggregator's own signed bid.
+
+Step 7 has no defined shape for a decline. Tracked separately.
 
 ## Files added by this fork
 
