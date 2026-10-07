@@ -213,3 +213,21 @@ test_market_column_const_violation if {
 	some v in vs
 	contains(v, "OFFER_PRICE")
 }
+
+# --- FORK EDIT FC-003 (demand-flex-pac-contractpolicy_test.rego) -------
+# New rule: OFFER_PRICE and CAPACITY_OFFERED must be equal in length.
+# Register : FORK-CHANGES.md FC-003
+# -----------------------------------------------------------------------
+
+test_bid_curve_misaligned if {
+	bad := json.patch(_market, [{
+		"op": "replace",
+		"path": "/intervals/0/payloads/0/values",
+		"value": [1.5, 2.5, 3.5],
+	}])
+	vs := violations with input as _input_with_market(bad)
+	some v in vs
+	contains(v, "bid curve misaligned")
+}
+
+# --- end FORK EDIT FC-003 ----------------------------------------------
