@@ -211,7 +211,21 @@ jobs:
       # Expected: 3 of 12 rejected, all rule 3a, after FC-001.
       # Set to 0 once FC-002 lands.
       # ---------------------------------------------------------------------
-      - name: D1 bid-curve payloads against the network policy
+      # ---------------------------------------------------------------------
+      # Every discovered-price fixture must pass the network policy.
+      #
+      # History of this check:
+      #   at upstream 54a5c7b  11 of 12 rejected — two column locks plus the
+      #                        rule 3a stage gate
+      #   after FC-001          3 of 12 rejected — locks removed, stage gate
+      #                        still firing on fixtures with no commitment
+      #   after FC-002          0 of 12 rejected — fixtures now declare
+      #                        OFFER_PRICE and CAPACITY_OFFERED at init
+      #
+      # Now a conformance check rather than a defect record: both products
+      # pass the same shared network policy.
+      # ---------------------------------------------------------------------
+      - name: Every uc2 fixture passes the network policy
         run: |
           REJECTED=0; TOTAL=0
           for f in $UC2/*.json; do
@@ -229,30 +243,10 @@ jobs:
           done
           echo
           echo "rejected $REJECTED of $TOTAL"
-          FAILED=0
-          if [ "$REJECTED" -ne 3 ]; then
-            echo "  ASSERT FAILED: expected 3 rejections, got $REJECTED"
-            echo "  Fewer means the rule 3a fixtures were fixed — see FC-002."
-            echo "  More means something regressed."
-            FAILED=1
+          if [ "$REJECTED" -ne 0 ]; then
+            echo "  ASSERT FAILED: expected 0 rejections, got $REJECTED"
+            exit 1
           fi
-          # The three expected rejections are all rule 3a (no CAPACITY_OFFERED
-          # column declared). Anything rejected for another reason means a
-          # column lock has returned — catch it even if the count is right.
-          OTHER=0
-          for f in $UC2/*.json; do
-            opa eval -f json -d $NET -i "$f" \
-              'data.deg.policy.demand_flex_network.violations' \
-              | jq -r '.result[0].expressions[0].value[]?' \
-              | grep -v "requires a CAPACITY_OFFERED column" \
-              | grep -q . && OTHER=$((OTHER+1))
-          done
-          if [ "$OTHER" -ne 0 ]; then
-            echo "  ASSERT FAILED: $OTHER fixture(s) rejected for a reason other"
-            echo "  than the rule 3a stage gate. The column locks should be gone."
-            FAILED=1
-          fi
-          exit $FAILED
 
       # ---------------------------------------------------------------------
       # D2 - settlement runs on an incomplete page.

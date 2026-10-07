@@ -55,6 +55,44 @@
                 {"role": "seller", "participantId": "greenflex-agg", "inputs": {"participatingMeters": ["did:web:tpddl.delhi.gov.in:meters:001", "did:web:tpddl.delhi.gov.in:meters:002"]}}
               ]
             }
+          },
+            "commitmentAttributes": {
+            "@context": "https://schema.nfh.global/BecknTimeSeries/v1.0/context.jsonld",
+            "@type": "TimeSeries",
+            "intervalPeriod": {
+              "start": "2026-06-15T13:30:00Z",
+              "duration": "PT1H"
+              },
+            "payloadDescriptors": [
+              {
+                "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                "payloadType": "OFFER_PRICE",
+                "units": "INR_PER_KWH",
+                "insertedBy": "seller"
+              },
+              {
+                "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                "payloadType": "CAPACITY_OFFERED",
+                "units": "KW",
+                "insertedBy": "seller"
+              }
+            ],
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  { "type": "OFFER_PRICE",      "values": [1.5, 2.5, 3.5, 5.0] },
+                  { "type": "CAPACITY_OFFERED", "values": [90, 70, 50, 30] }
+                ]
+              },
+              {
+                "id": 1,
+                "payloads": [
+                  { "type": "OFFER_PRICE",      "values": [1.5, 2.5, 3.5, 5.0] },
+                  { "type": "CAPACITY_OFFERED", "values": [80, 60, 45, 25] }
+                ]
+              }
+            ]
           }
         }
       ],
