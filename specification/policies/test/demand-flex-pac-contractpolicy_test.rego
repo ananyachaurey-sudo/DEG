@@ -213,3 +213,41 @@ test_market_column_const_violation if {
 	some v in vs
 	contains(v, "OFFER_PRICE")
 }
+
+# --- FORK EDIT FC-003 (demand-flex-pac-contractpolicy_test.rego) -------
+# New rule: OFFER_PRICE and CAPACITY_OFFERED must carry the same number
+# of values in each market interval. The curve is read positionally, and
+# _ask_at_cleared indexes prices by a position found in powers — so a
+# mismatch silently drops entries and the pay-as-clear audit compares
+# against an incomplete set of asks.
+# Register : FORK-CHANGES.md FC-003
+# -----------------------------------------------------------------------
+
+# Like _mkt, but with three OFFER_PRICE values against four CAPACITY_OFFERED.
+_mkt_misaligned(iid, cleared_kw, clearing_price) := {"id": iid, "payloads": [
+	{"type": "OFFER_PRICE", "values": [1.5, 2.5, 3.5]},
+	{"type": "CAPACITY_OFFERED", "values": [90, 70, 50, 30]},
+	{"type": "CAPACITY_CLEARED", "values": [cleared_kw]},
+	{"type": "CLEARING_PRICE", "values": [clearing_price]},
+]}
+
+_misaligned := _payload(
+	[_mkt_misaligned(0, 50, 3.5)],
+	[_meter("m1", {0: [55.0, 30.0]})],
+)
+
+test_bid_curve_misaligned if {
+	v := violations with input as _misaligned
+	some msg in v
+	contains(msg, "bid curve misaligned")
+}
+
+# A correctly aligned curve must NOT trigger it.
+test_bid_curve_aligned_ok if {
+	v := violations with input as _fixture
+	every msg in v {
+		not contains(msg, "bid curve misaligned")
+	}
+}
+
+# --- end FORK EDIT FC-003 ----------------------------------------------

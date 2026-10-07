@@ -235,6 +235,41 @@ _ask_at_cleared(iid) := ask if {
 # Violations
 # ---------------------------------------------------------------------------
 
+# --- FORK EDIT FC-003 (demand-flex-pac-contractpolicy.rego) ------------
+# Change    : new violation — OFFER_PRICE and CAPACITY_OFFERED must carry
+#             the same number of values in each market interval.
+# Rationale : The bid curve is expressed as parallel arrays read by
+#             position: OFFER_PRICE [1.5, 2.5] against CAPACITY_OFFERED
+#             [90, 70] means 90 kW at 1.5 and a further 70 kW at 2.5.
+#             Nothing checked they were the same length.
+#             This is not only hygiene. _ask_at_cleared indexes prices by
+#             a position found in powers, so a longer powers array yields
+#             an undefined price that the comprehension drops silently.
+#             The audit then takes a minimum over a partial set and may
+#             accept a clearing price below the true cheapest covering
+#             ask. The pay-as-clear invariant is unsound without this.
+#             Deliberately NOT in the network policy. Not all columns in
+#             an interval correlate — CAPACITY_CLEARED and CLEARING_PRICE
+#             are scalars alongside a four-entry curve, so a blanket
+#             equal-length rule would reject valid payloads. Which
+#             columns pair is product knowledge, so it belongs here.
+# Register  : FORK-CHANGES.md FC-003
+# -----------------------------------------------------------------------
+violations contains msg if {
+	some interval in _market.intervals
+	prices := _payload_values(interval, "OFFER_PRICE")
+	powers := _payload_values(interval, "CAPACITY_OFFERED")
+	count(prices) > 0
+	count(powers) > 0
+	count(prices) != count(powers)
+	msg := sprintf(
+		"interval %v: bid curve misaligned — %d OFFER_PRICE values against %d CAPACITY_OFFERED values",
+		[interval.id, count(prices), count(powers)],
+	)
+}
+
+# --- end FORK EDIT FC-003 ----------------------------------------------
+
 violations contains msg if {
 	not "buyer" in _roles
 	msg := "no participant with role 'buyer' found"
