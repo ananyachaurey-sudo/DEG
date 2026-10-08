@@ -202,16 +202,63 @@ _total_shortfall_kwh := sum([s.shortfallKwh | some _, s in _interval_settlement]
 _desc(label) := sprintf("PAC clearing %s: %v kWh paid as cleared minus %v %s penalty (%v kWh shortfall @ %v %s/kWh)",
 	[label, _total_paid_kwh, total_penalty, _currency, _total_shortfall_kwh, _penalty_rate, _currency])
 
+# --- FORK EDIT FC-005 (demand-flex-pac-contractpolicy.rego) ------------
+# Upstream  : revenue_flows was an unconditional comprehension. It emitted
+#             flows whenever the body resolved — no gate on settlement
+#             eligibility, and none on pagination. _revenue_sum and
+#             net_zero_ok read it directly.
+# Change    : introduces the internal/exported split used by
+#             demand-flex-contractpolicy.rego. _revenue_flows is computed
+#             unconditionally and feeds the net-zero check. The exported
+#             revenue_flows is gated on a settlement-eligible performance
+#             record AND a complete performance collection.
+# Rationale : Two defects, one fix.
+#             (1) Pagination. Performance records may be paginated for
+#             cohorts in the thousands and nothing read pageInfo, so a
+#             page settled as though it were the whole cohort. FC-004
+#             closed this for posted-price settlement; the bid-curve
+#             policy had the same blindness.
+#             (2) No settlement-eligibility gate at all. The posted-price
+#             policy declines to export flows without an eligible
+#             performance record. This one exported regardless.
+#             Why the split: the exported name is an instruction to the
+#             enforcer — undefined means "write nothing". The internal
+#             name is what was computed, and the net-zero consistency
+#             check needs it whether or not the message is settleable.
+#             Collapsing them would silently disable that check exactly
+#             when something unusual is happening.
+#             pageInfo is optional; a record without it is unpaginated and
+#             complete by definition.
+#             Known limit: refuses a page that declares itself incomplete,
+#             but cannot detect that earlier pages were lost. Assembly is
+#             the receiver's responsibility.
+# Register  : FORK-CHANGES.md FC-005
+# -----------------------------------------------------------------------
+
 _flow_defs := [["seller", 1, "receivable"], ["buyer", -1, "payable"]]
 
-revenue_flows := [flow |
+# Internal: always computed, so the net-zero check holds in every case.
+_revenue_flows := [flow |
 	some def in _flow_defs
 	flow := {"role": def[0], "value": def[1] * seller_net, "currency": _currency, "description": _desc(def[2])}
 ]
 
-_revenue_sum := sum([f.value | some f in revenue_flows])
+# True when this performance record is not a partial page.
+_collection_complete if not _settlement_perf.performanceAttributes.pageInfo
+
+_collection_complete if _settlement_perf.performanceAttributes.pageInfo.isLast == true
+
+# Exported: an instruction to the enforcer. Undefined means write nothing.
+revenue_flows := _revenue_flows if {
+	_settlement_perf
+	_collection_complete
+}
+
+_revenue_sum := sum([f.value | some f in _revenue_flows])
 
 net_zero_ok if _revenue_sum == 0
+
+# --- end FORK EDIT FC-005 ----------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Bid-curve audit (flag only — never gates the money math)
@@ -343,4 +390,17 @@ violations contains msg if {
 	cols := {d.payloadType | some d in descs}
 	cols != {"OFFER_PRICE", "CAPACITY_OFFERED", "CAPACITY_CLEARED", "CLEARING_PRICE"}
 	msg := sprintf("market columns must be exactly {OFFER_PRICE, CAPACITY_OFFERED, CAPACITY_CLEARED, CLEARING_PRICE}, got %v", [cols])
+}
+
+# FC-005 — settlement must not run on a partial page. Without this the
+# refusal above would be silent.
+# Register: FORK-CHANGES.md FC-005
+violations contains msg if {
+	pi := _settlement_perf.performanceAttributes.pageInfo
+	pi.isLast != true
+	n := count(_settlement_perf.performanceAttributes.meters)
+	msg := sprintf(
+		"performance collection %v is incomplete (isLast=%v, %d of %v meters in this page) — cannot settle",
+		[object.get(pi, "collectionId", "?"), pi.isLast, n, object.get(pi, "total", "?")],
+	)
 }
