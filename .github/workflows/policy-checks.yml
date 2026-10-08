@@ -249,19 +249,29 @@ jobs:
           fi
 
       # ---------------------------------------------------------------------
-      # D2 - settlement runs on an incomplete page.
+      # D2 - settlement must refuse a partial page.          [updated by FC-004]
       #
-      # Performance records can be paginated for cohorts in the thousands.
-      # Both paginated fixtures declare isLast=false against a stated total of
-      # 12,000 meters, carry 2 meters, and still produce a full settlement of
-      # 436.25. One is not even the first page. The contract policy has no
-      # pagination awareness: no last-page check, no collection-id check.
+      # Before FC-004 this step reported; it now asserts.
       #
-      # Reports rather than asserts, since the shape of the fix is not settled.
+      # At upstream 54a5c7b both paginated fixtures declared isLast=false
+      # against a stated total of 12,000 meters, carried 2 meters, and still
+      # produced a full settlement of 436.25. One was sequence 1 with a cursor
+      # pointing at page 3 — not even the first page.
+      #
+      # FC-004 gated revenue_flows on the collection being complete, so it is
+      # now undefined for a page that declares itself incomplete, and
+      # violation S4 explains the refusal.
+      #
+      # `// empty` gives jq a fallback when revenue_flows is undefined, which
+      # is the expected state here. Without it jq errors on a null input,
+      # which is what the pre-FC-004 version of this step did once the guard
+      # landed.
+      #
+      # Register: FORK-CHANGES.md FC-004
       # ---------------------------------------------------------------------
-      - name: D2 partial page settlement
-        continue-on-error: true
+      - name: D2 partial pages do not settle
         run: |
+          FAILED=0
           for f in on-status-response-actuals-paged-push.json \
                    on-status-response-actuals-paged-pull.json; do
             LAST=$(jq -r '[.message.contract.performance[]?
@@ -270,12 +280,29 @@ jobs:
                         .performanceAttributes.meters[]?.meterId] | length' "$UC1/$f")
             TOT=$(jq -r '[.message.contract.performance[]?
                           .performanceAttributes.pageInfo.total][0]' "$UC1/$f")
+            # FC-004: expected to be undefined — an incomplete page must not settle
             S=$(opa eval -f json -d $CON -i "$UC1/$f" \
                  'data.deg.contracts.demand_flex.revenue_flows' \
-                 | jq -r '.result[0].expressions[0].value
-                          | map(select(.role=="seller")) | .[0].value')
-            echo "  $f: isLast=$LAST meters=$N total=$TOT settles=$S"
+                 | jq -r '.result[0].expressions[0].value // empty
+                          | map(select(.role=="seller")) | .[0].value' 2>/dev/null)
+            # FC-004: violation S4 must explain the refusal, so it is not silent
+            V=$(opa eval -f json -d $CON -i "$UC1/$f" \
+                 'data.deg.contracts.demand_flex.violations' \
+                 | jq -r '.result[0].expressions[0].value[]? // empty' \
+                 | grep -c "is incomplete" || true)
+            echo "  $f"
+            echo "      isLast=$LAST  meters_in_page=$N  total=$TOT"
+            echo "      revenue_flows=${S:-<undefined>}  incomplete-violations=$V"
+            if [ -n "$S" ]; then
+              echo "      ASSERT FAILED (FC-004): an incomplete page produced a settlement of $S"
+              FAILED=1
+            fi
+            if [ "$V" -lt 1 ]; then
+              echo "      ASSERT FAILED (FC-004): no violation explaining the refusal"
+              FAILED=1
+            fi
           done
+          exit $FAILED
 
       # ---------------------------------------------------------------------
       # D3 - the implementation guide contradicts the fixtures.

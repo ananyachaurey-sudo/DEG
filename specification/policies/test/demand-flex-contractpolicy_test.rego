@@ -127,3 +127,47 @@ test_revenue_flows_undefined_without_performance if {
 test_revenue_flows_defined_with_performance if {
 	count(revenue_flows) == 2 with input as _std
 }
+
+# --- FORK EDIT FC-004 (demand-flex-contractpolicy_test.rego) ----------
+# Settlement must refuse a partial page.
+# Register: FORK-CHANGES.md FC-004
+# -----------------------------------------------------------------------
+
+_page_info(seq, is_last) := {
+	"@type": "PageInfo",
+	"sequence": seq,
+	"pageSize": 4000,
+	"total": 12000,
+	"isLast": is_last,
+	"collectionId": "perf-test-001",
+}
+
+_paged(seq, is_last) := json.patch(_std, [{
+	"op": "add",
+	"path": "/message/contract/performance/0/performanceAttributes/pageInfo",
+	"value": _page_info(seq, is_last),
+}])
+
+# A page declaring itself incomplete produces no revenue flows.
+test_partial_page_does_not_settle if {
+	not revenue_flows with input as _paged(0, false)
+}
+
+# ...and says why.
+test_partial_page_flagged if {
+	v := violations with input as _paged(0, false)
+	some msg in v
+	contains(msg, "is incomplete")
+}
+
+# The last page of a collection settles normally.
+test_last_page_settles if {
+	revenue_flows with input as _paged(2, true)
+}
+
+# No pageInfo means unpaginated, which settles as before.
+test_unpaginated_settles if {
+	revenue_flows with input as _std
+}
+
+# --- end FORK EDIT FC-004 ----------------------------------------------
