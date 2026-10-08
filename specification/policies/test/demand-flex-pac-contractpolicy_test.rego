@@ -251,3 +251,47 @@ test_bid_curve_aligned_ok if {
 }
 
 # --- end FORK EDIT FC-003 ----------------------------------------------
+
+# --- FORK EDIT FC-005 (demand-flex-pac-contractpolicy_test.rego) -------
+# Settlement must refuse a partial page, and the net-zero check must
+# survive the gate. Register: FORK-CHANGES.md FC-005
+# -----------------------------------------------------------------------
+
+_pac_page_info(seq, is_last) := {
+	"@type": "PageInfo",
+	"sequence": seq,
+	"pageSize": 4000,
+	"total": 12000,
+	"isLast": is_last,
+	"collectionId": "perf-pac-test-001",
+}
+
+_pac_paged(seq, is_last) := json.patch(_fixture, [{
+	"op": "add",
+	"path": "/message/contract/performance/0/performanceAttributes/pageInfo",
+	"value": _pac_page_info(seq, is_last),
+}])
+
+test_pac_partial_page_does_not_settle if {
+	not revenue_flows with input as _pac_paged(0, false)
+}
+
+test_pac_partial_page_flagged if {
+	v := violations with input as _pac_paged(0, false)
+	some msg in v
+	contains(msg, "is incomplete")
+}
+
+test_pac_last_page_settles if {
+	revenue_flows with input as _pac_paged(2, true)
+}
+
+# The internal/exported split: the net-zero check must still hold on a
+# partial page, even though nothing is exported.
+test_pac_net_zero_survives_the_gate if {
+	not revenue_flows with input as _pac_paged(0, false)
+	net_zero_ok with input as _pac_paged(0, false)
+}
+
+# --- end FORK EDIT FC-005 ----------------------------------------------
+
