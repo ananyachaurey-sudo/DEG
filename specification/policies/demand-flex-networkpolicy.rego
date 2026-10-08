@@ -77,10 +77,11 @@
 #        5a. Participant roles — a contractAttributes-bearing message MUST
 #            name both a buyer and a seller.
 #   	 5b. DemandFlexNeed required columns. The need MUST declare
-#      		 CAPACITY_REQUESTED. PRICE and SHORTFALL_PENALTY are not required
-#     	  	 at this layer: a discovered-price event solicits bids rather than
-#      		 posting a rate and carries neither. Posted-price settlement
-#      		 requires them in its own contract policy. (FC-001; 5c removed.)
+#     		 CAPACITY_REQUESTED and SHORTFALL_PENALTY (0 where none applies).
+#     		 PRICE is not required here: a discovered-price event solicits bids
+#     		 rather than posting a rate and carries none. Posted-price
+#     		 settlement requires it in its own contract policy.
+#     		 (FC-001, FC-006; 5c removed.)
 #        5d. Meter telemetry grid — each meter's telemetry `intervalPeriod`
 #            MUST match the DemandFlexNeed grid.
 #      Each self-skips when the series it inspects is absent.
@@ -394,6 +395,35 @@ violations contains msg if {
 	not "CAPACITY_REQUESTED" in cols
 	msg := sprintf("DemandFlexNeed must declare a CAPACITY_REQUESTED column, got %v", [cols])
 }
+
+# --- FORK EDIT FC-006 (demand-flex-networkpolicy.rego) -----------------
+# Change    : 5b also requires SHORTFALL_PENALTY.
+# Rationale : An aggregator pricing flexibility is pricing a risk, and
+#             cannot price downside it has not been told about. This is
+#             true of both products: in a discovered-price event the
+#             penalty is an INPUT to the bid, so withholding it until
+#             later means bids are formed blind on the one term that
+#             bounds the loss.
+#             Required rather than optional, with 0 where no penalty
+#             applies, so that "no penalty" is distinguishable from "not
+#             stated yet". An aggregator cannot safely bid against the
+#             second.
+#             Required from catalogue onward, which also closes the
+#             cross-message problem for this column: a penalty cannot be
+#             introduced late if it had to be there from the start.
+#             PRICE is deliberately NOT required here — a discovered-price
+#             event carries none. It is required by the posted-price
+#             contract policy. See FC-007.
+# Register  : FORK-CHANGES.md FC-006
+# -----------------------------------------------------------------------
+violations contains msg if {
+	some ra in _demand_flex_needs
+	cols := {d.payloadType | some d in ra.payloadDescriptors}
+	not "SHORTFALL_PENALTY" in cols
+	msg := sprintf("DemandFlexNeed must declare a SHORTFALL_PENALTY column (0 if none applies), got %v", [cols])
+}
+
+# --- end FORK EDIT FC-006 ----------------------------------------------
 
 # 5c) REMOVED by FC-001. It pinned the commitment column set to exactly
 # {CAPACITY_OFFERED}, which prevented an offer carrying its own OFFER_PRICE —
