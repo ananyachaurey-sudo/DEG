@@ -140,7 +140,46 @@ _revenue_flows := [
 # finds no `revenue_flows` and skips injection — no zero-value settlement
 # artifact is written onto a pre-settlement contract. net-zero and _revenue_sum
 # key off the always-defined _revenue_flows, so their semantics are unchanged.
-revenue_flows := _revenue_flows if _settlement_perf
+
+# --- FORK EDIT FC-004 (demand-flex-contractpolicy.rego) ----------------
+# Upstream  : revenue_flows := _revenue_flows if _settlement_perf
+# Change    : also requires the performance collection to be complete.
+# Rationale : Performance records may be paginated across messages for
+#             cohorts in the thousands. Nothing read pageInfo, so a single
+#             page settled as though it were the whole cohort.
+#             Measured at upstream 54a5c7b: both paginated fixtures
+#             declare isLast=false against a stated total of 12,000
+#             meters, carry 2 meters, and produce a full settlement. One
+#             is sequence 1 with a cursor pointing at page 3 — not even
+#             the first page. A genuine page 0 of 3 would settle at
+#             roughly a third of the true amount, signed and silently
+#             wrong, surfacing as a reconciliation dispute months later.
+#             Uses the mechanism already present for pre-settlement
+#             contracts: leave revenue_flows undefined so the enforcer
+#             injects nothing, rather than writing a wrong figure. The
+#             internal _revenue_flows stays unconditional so net_zero_ok
+#             is unaffected.
+#             pageInfo is optional. A record without it is unpaginated
+#             and complete by definition.
+#             Known limit: this refuses a page that declares itself
+#             incomplete. It cannot detect that earlier pages were lost —
+#             a final page arriving after two were dropped looks complete.
+#             Assembly is the receiver's responsibility.
+# Register  : FORK-CHANGES.md FC-004
+# -----------------------------------------------------------------------
+
+# True when this performance record is not a partial page: either it
+# carries no pageInfo at all, or pageInfo marks it as the last page.
+_collection_complete if not _settlement_perf.performanceAttributes.pageInfo
+
+_collection_complete if _settlement_perf.performanceAttributes.pageInfo.isLast == true
+
+revenue_flows := _revenue_flows if {
+	_settlement_perf
+	_collection_complete
+}
+
+# --- end FORK EDIT FC-004 ----------------------------------------------
 
 _revenue_sum := sum([f.value | some f in _revenue_flows])
 
@@ -190,4 +229,18 @@ violations contains msg if {
 violations contains msg if {
 	not net_zero_ok
 	msg := sprintf("net-zero failed: revenue sum = %g (expected 0)", [_revenue_sum])
+}
+
+# S4 (FC-004) — settlement must not run on a partial page. Without this the
+# refusal above would be silent: revenue_flows simply undefined, with no
+# explanation on the wire.
+# Register: FORK-CHANGES.md FC-004
+violations contains msg if {
+	pi := _settlement_perf.performanceAttributes.pageInfo
+	pi.isLast != true
+	n := count(_settlement_perf.performanceAttributes.meters)
+	msg := sprintf(
+		"performance collection %v is incomplete (isLast=%v, %d of %v meters in this page) — cannot settle",
+		[object.get(pi, "collectionId", "?"), pi.isLast, n, object.get(pi, "total", "?")],
+	)
 }
