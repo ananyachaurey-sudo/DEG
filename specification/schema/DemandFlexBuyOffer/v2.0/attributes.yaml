@@ -57,9 +57,11 @@ components:
             CAPACITY_REQUESTED / PRICE / SHORTFALL_PENALTY) and the commitment
             series (seller column CAPACITY_OFFERED); these inputs carry only
             what does not vary by interval.
-            For buyer: currency and baselineMethodology (a negative PRICE
-            column pays for increased consumption, so there is no scalar
-            incentive/penalty field).
+            For buyer: currency and baselineMethodology. Per-slot commercial
+            terms ride the time series, and the direction of flexibility is
+            carried by DemandFlexNeed.direction — not by the sign of the
+            PRICE column, as an earlier version of this schema stated
+            (FC-008).
             For seller: participatingMeters (or participatingMetersRef when the
             cohort is bulk), energyResources (or energyResourcesRef) —
             EnergyResource objects each linked to a
