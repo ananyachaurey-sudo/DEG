@@ -12,11 +12,13 @@ info:
     buyer's three per-slot terms — one interval per tranche / timeslot:
 
       CAPACITY_REQUESTED  kW           how much flex the utility wants that slot
-      PRICE               INR_PER_KWH  incentive that slot; a NEGATIVE price
-                                       pays for INCREASED consumption (soak),
-                                       so the sign carries reduce-vs-increase
-                                       intent and no separate `direction` field
-                                       is needed
+      PRICE               INR_PER_KWH  incentive that slot. Required for
+                                       posted-price settlement; absent in a
+                                       discovered-price event, where the rate
+                                       is established by clearing. Always
+                                       POSITIVE — the direction of flexibility
+                                       is carried by the `direction` attribute,
+                                       not by the sign of the price (FC-008)
       SHORTFALL_PENALTY   INR_PER_KWH  per-kWh charge on under-delivery vs the
                                        aggregator's CAPACITY_OFFERED that slot
 
@@ -76,6 +78,26 @@ components:
           x-standard: "GeoJSON (RFC 7946)"
           x-jsonld:
             "@id": location
+
+        direction:
+          type: string
+          enum: [SHED, ABSORB]
+          default: SHED
+          description: >
+            Whether the utility is asking for consumption to be REDUCED
+            against the counterfactual (SHED) or RAISED above it (ABSORB,
+            typically to absorb surplus generation). Determines the sign of
+            the delivered term at settlement: SHED settles on
+            BASELINE − USAGE, ABSORB on USAGE − BASELINE, each floored at
+            zero. Optional; absent means SHED, so events published before
+            this attribute existed continue to settle unchanged.
+            An earlier version of this schema stated that a negative PRICE
+            carried this intent. That was never implemented in any
+            settlement policy, and is insufficient in principle: the
+            settlement RULE changes, not merely the sign of its result. A
+            reduction-only calculation multiplied by a negative price yields
+            a negative payment for a reduction, not a positive payment for
+            an increase. (FC-008)
 
         intervalPeriod:
           $ref: "https://schema.nfh.global/openadr/v3.1.0/attributes.yaml#/components/schemas/intervalPeriod"

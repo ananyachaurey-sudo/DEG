@@ -80,13 +80,68 @@ _dur_hours := h if {
 	h := _numz(m[1]) + (_numz(m[2]) / 60)
 }
 
-# per-meter clamped reduction at an interval; undefined if BASELINE or USAGE absent
-_meter_reduction(meter, ivid) := _clamp0(base - use) if {
+# --- FORK EDIT FC-008 (demand-flex-contractpolicy.rego) ----------------
+# Upstream  : _meter_reduction(meter, ivid) := _clamp0(base - use)
+#             — reduction only, with no way to settle a load increase.
+# Change    : renamed to _meter_delta, with two bodies branching on the
+#             direction declared on the need.
+# Rationale : The offer schema claimed a negative PRICE column paid for
+#             increased consumption, and gave that as the reason no
+#             direction field existed. No settlement policy ever
+#             implemented it. It is also insufficient in principle: the
+#             settlement RULE changes, not merely the sign of its result.
+#             A reduction-only calculation multiplied by a negative price
+#             yields a negative payment for a reduction, not a positive
+#             payment for an increase — so an aggregator that correctly
+#             raised consumption would measure as having delivered
+#             nothing, earn nothing, and take the full shortfall penalty.
+#             Direction is therefore declared on the need. Unlike
+#             procurement mode, which needs no field because two contract
+#             policies already exist and the policy URL declares which
+#             applies, direction has no such carrier: a separate absorb
+#             policy would duplicate settlement arithmetic differing in
+#             one operator, which is the last thing that should be
+#             allowed to drift.
+#             Everything downstream — eligible, payment, shortfall,
+#             penalty, revenue flows — is direction-agnostic and unchanged.
+#             SHORTFALL_PENALTY keeps its meaning: committed minus
+#             delivered, floored at zero. For ABSORB that is failing to
+#             consume as much as committed.
+#             Defaults to SHED when the attribute is absent, so every
+#             existing need settles exactly as before.
+# Register  : FORK-CHANGES.md FC-008
+# -----------------------------------------------------------------------
+
+_direction := d if {
+	d := _need.direction
+}
+
+_direction := "SHED" if not _need.direction
+
+# per-meter clamped delta at an interval, in the declared direction;
+# undefined if BASELINE or USAGE absent
+_meter_delta(meter, ivid) := _clamp0(base - use) if {
+	_direction == "SHED"
 	base := _val(meter.telemetry.intervals, ivid, "BASELINE")
 	use := _val(meter.telemetry.intervals, ivid, "USAGE")
 }
 
-_delivered(ivid) := sum([_meter_reduction(m, ivid) | some m in _meters])
+_meter_delta(meter, ivid) := _clamp0(use - base) if {
+	_direction == "ABSORB"
+	base := _val(meter.telemetry.intervals, ivid, "BASELINE")
+	use := _val(meter.telemetry.intervals, ivid, "USAGE")
+}
+
+_delivered(ivid) := sum([_meter_delta(m, ivid) | some m in _meters])
+
+# S5 (FC-008) — an unrecognised direction must not settle silently as SHED.
+violations contains msg if {
+	_need.direction
+	not _need.direction in {"SHED", "ABSORB"}
+	msg := sprintf("unrecognised direction %v on DemandFlexNeed — expected SHED or ABSORB", [_need.direction])
+}
+
+# --- end FORK EDIT FC-008 ----------------------------------------------
 
 # --------------------------------------------------------------------------
 # Per-interval settlement

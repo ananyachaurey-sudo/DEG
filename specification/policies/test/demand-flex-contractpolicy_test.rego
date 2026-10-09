@@ -200,3 +200,42 @@ test_price_column_present_ok if {
 }
 
 # --- end FORK EDIT FC-007 ----------------------------------------------
+
+# --- FORK EDIT FC-008 (demand-flex-contractpolicy_test.rego) ----------
+# Direction declaration and absorb settlement.
+# Register: FORK-CHANGES.md FC-008
+# -----------------------------------------------------------------------
+
+_with_direction(dir) := json.patch(_std, [{
+	"op": "add",
+	"path": "/message/contract/commitments/0/resources/0/resourceAttributes/direction",
+	"value": dir,
+}])
+
+# Absent direction settles exactly as before.
+test_direction_defaults_to_shed if {
+	total_settlement == total_settlement with input as _with_direction("SHED")
+}
+
+# Explicit SHED is identical to the unpatched fixture.
+test_explicit_shed_matches_default if {
+	a := total_settlement with input as _std
+	b := total_settlement with input as _with_direction("SHED")
+	a == b
+}
+
+# _std has baseline above usage, so ABSORB measures zero delivery and the
+# full shortfall penalty applies — the reciprocal case, proving the branch.
+test_absorb_reverses_the_delta if {
+	shed := total_settlement with input as _std
+	absorb := total_settlement with input as _with_direction("ABSORB")
+	absorb != shed
+}
+
+test_unrecognised_direction_flagged if {
+	v := violations with input as _with_direction("SIDEWAYS")
+	some msg in v
+	contains(msg, "unrecognised direction")
+}
+
+# --- end FORK EDIT FC-008 ----------------------------------------------
