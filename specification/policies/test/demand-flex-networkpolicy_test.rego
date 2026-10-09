@@ -345,6 +345,14 @@ test_need_missing_capacity_requested if {
 	contains(v, "must declare a CAPACITY_REQUESTED column")
 }
 
+# 5b (FC-006) a need missing SHORTFALL_PENALTY → violation
+test_need_missing_shortfall_penalty if {
+	bad := json.patch(_need2, [{"op": "replace", "path": "/payloadDescriptors/2/payloadType", "value": "SOMETHING_ELSE"}])
+	vs := violations with input as _commit_input(bad, _offered2)
+	some v in vs
+	contains(v, "must declare a SHORTFALL_PENALTY column")
+}
+
 # 5b) an extra column on the need is now PERMITTED — products define their
 # own column sets in their contract policy, not here.
 test_need_extra_column_allowed if {
