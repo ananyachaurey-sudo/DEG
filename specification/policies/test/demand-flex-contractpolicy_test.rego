@@ -171,3 +171,32 @@ test_unpaginated_settles if {
 }
 
 # --- end FORK EDIT FC-004 ----------------------------------------------
+
+# --- FORK EDIT FC-007 (demand-flex-contractpolicy_test.rego) ----------
+# Posted-price settlement requires a PRICE column on the need.
+# Register: FORK-CHANGES.md FC-007
+# -----------------------------------------------------------------------
+
+# _need_ts carries CAPACITY_REQUESTED, PRICE, SHORTFALL_PENALTY.
+# Renaming the PRICE descriptor leaves the need without one.
+_no_price := json.patch(_std, [{
+	"op": "replace",
+	"path": "/message/contract/commitments/0/resources/0/resourceAttributes/payloadDescriptors/1/payloadType",
+	"value": "SOMETHING_ELSE",
+}])
+
+test_posted_price_requires_price_column if {
+	v := violations with input as _no_price
+	some msg in v
+	contains(msg, "requires a PRICE column")
+}
+
+# The standard fixture declares PRICE and must not trip it.
+test_price_column_present_ok if {
+	v := violations with input as _std
+	every msg in v {
+		not contains(msg, "requires a PRICE column")
+	}
+}
+
+# --- end FORK EDIT FC-007 ----------------------------------------------

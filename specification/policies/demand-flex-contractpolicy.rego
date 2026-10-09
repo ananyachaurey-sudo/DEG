@@ -244,3 +244,36 @@ violations contains msg if {
 		[object.get(pi, "collectionId", "?"), pi.isLast, n, object.get(pi, "total", "?")],
 	)
 }
+
+# --- FORK EDIT FC-007 (demand-flex-contractpolicy.rego) ----------------
+# Change    : new violation — the need must declare a PRICE column.
+# Rationale : This policy reads PRICE per interval (_val(_need.intervals,
+#             ivid, "PRICE")) but never checked it was declared. That was
+#             safe only because the network policy's column lock
+#             guaranteed it. FC-001 removed that lock, deliberately: a
+#             discovered-price event carries no PRICE at all, and its
+#             absence is how such an event declares itself. So the
+#             requirement cannot live at the network layer — it belongs
+#             to the product that settles against a posted rate, which is
+#             this one.
+#             Without this, a posted-price need lacking PRICE would reach
+#             settlement and simply fail to compute, with no explanation
+#             on the wire.
+#             Timing: the contract policy is invoked from select/on_select
+#             onward — violationActions in the devkit config lists
+#             select, init, confirm and their callbacks, never
+#             catalog/publish. So a price omitted at publication is caught
+#             one round trip later, at the first selection, before
+#             anything is committed. Publishing the price at catalogue is
+#             an implementation obligation on the utility, not something
+#             this layer can enforce.
+# Register  : FORK-CHANGES.md FC-007
+# -----------------------------------------------------------------------
+violations contains msg if {
+	_need
+	cols := {d.payloadType | some d in _need.payloadDescriptors}
+	not "PRICE" in cols
+	msg := sprintf("posted-price settlement requires a PRICE column on DemandFlexNeed, got %v", [cols])
+}
+
+# --- end FORK EDIT FC-007 ----------------------------------------------
