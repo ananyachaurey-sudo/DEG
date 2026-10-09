@@ -38,8 +38,10 @@
                 "@type": "DemandFlexNeed",
                 "location": {"geo": {"type": "Point", "coordinates": [77.209, 28.6139]}},
                 "intervalPeriod": {"start": "2026-06-15T13:30:00Z", "duration": "PT1H"},
-                "payloadDescriptors": [{"objectType": "EVENT_PAYLOAD_DESCRIPTOR", "payloadType": "CAPACITY_REQUESTED", "units": "KW", "insertedBy": "buyer"}],
-                "intervals": [{"id": 0, "payloads": [{"type": "CAPACITY_REQUESTED", "values": [200]}]}, {"id": 1, "payloads": [{"type": "CAPACITY_REQUESTED", "values": [200]}]}]
+                "payloadDescriptors": [{"objectType": "EVENT_PAYLOAD_DESCRIPTOR", "payloadType": "CAPACITY_REQUESTED", "units": "KW", "insertedBy": "buyer"},
+                                      {"objectType": "EVENT_PAYLOAD_DESCRIPTOR", "payloadType": "SHORTFALL_PENALTY", "units": "INR_PER_KWH", "insertedBy": "buyer"}],
+                "intervals": [{"id": 0, "payloads": [{"type": "CAPACITY_REQUESTED", "values": [200]}, {"type": "SHORTFALL_PENALTY", "values": [0.5]}]}, 
+                              {"id": 1, "payloads": [{"type": "CAPACITY_REQUESTED", "values": [200]}, {"type": "SHORTFALL_PENALTY", "values": [0.5]}]}]
               }
             }
           ],
