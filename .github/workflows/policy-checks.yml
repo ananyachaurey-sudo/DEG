@@ -70,36 +70,33 @@ jobs:
           echo "=== done ==="
 
       # ---------------------------------------------------------------------
-      # Schema validation.                                   [added by FC-009]
-      #
-      # Our CI has only ever evaluated Rego against JSON. It has never checked
-      # a fixture against the schemas, so every payload edited in FC-002 and
-      # FC-006, and the direction attribute added in FC-008, is unverified
-      # against DemandFlexNeed — which declares additionalProperties: false,
-      # meaning an undeclared field is a hard rejection on a real node.
+      # Core contract structure validation.                 [added by FC-009]
       #
       # Uses the repository's own scripts/validate_schema.py, so this checks
-      # what a node's validateSchema step would check rather than something
-      # we invented. It resolves $refs from schema.nfh.global over the
-      # network, hence the external dependency.
+      # what a node would check rather than a reimplementation.
       #
-      # NOTE: the script always exits 0 — it catches every exception and
-      # prints it, and has no sys.exit. So its exit status says nothing. We
-      # capture the output and fail on error lines instead.
+      # LIMIT — this validates message.contract against the core Beckn
+      # Contract structure ONLY. The validator resolves domain attribute
+      # schemas from @context URLs and prints "Loaded: <schema>/<version>"
+      # when it does. No such line appears for any demand-flex fixture, and
+      # no "Warning: Failed to load" either — it simply does not descend into
+      # the nested attribute objects. So DemandFlexNeed, DemandFlexBuyOffer,
+      # DemandFlexPerformance and BecknTimeSeries are NOT checked here, and
+      # additionalProperties: false is never exercised. The `direction`
+      # attribute added by FC-008 therefore remains unverified against its
+      # schema.
       #
-      # LIMIT: this validates message.contract against the core Beckn Contract
-      # structure only. The validator resolves domain attribute schemas from
-      # @context URLs and prints "Loaded: <schema>/<version>" when it does —
-      # no such line appears for any demand-flex fixture, so DemandFlexNeed,
-      # DemandFlexBuyOffer and BecknTimeSeries are NOT checked here, and
-      # additionalProperties: false is not exercised. publish-catalog.json and
-      # discover-request.json carry no message.contract and are not validated
-      # at all. The FC-008 `direction` attribute therefore remains unverified
-      # against its schema.      
+      # publish-catalog.json and discover-request.json carry no
+      # message.contract and receive no validation at all in either devkit.
+      #
+      # The install line below exists because requirements.txt sets no floor
+      # on jsonschema and the runner ships 4.10.3 from system packages, while
+      # the script imports `referencing` — a jsonschema dependency only from
+      # 4.18. Fixed separately as FC-010.
       #
       # Register: FORK-CHANGES.md FC-009
       # ---------------------------------------------------------------------
-      - name: Fixtures validate against the core Beckn contract schemas
+      - name: Fixtures validate against the core Beckn contract schema
         continue-on-error: true
         run: |
           echo "=== installing dependencies ==="
