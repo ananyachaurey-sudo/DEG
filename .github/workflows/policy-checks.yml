@@ -70,6 +70,43 @@ jobs:
           echo "=== done ==="
 
       # ---------------------------------------------------------------------
+      # Schema validation.                                   [added by FC-009]
+      #
+      # Our CI has only ever evaluated Rego against JSON. It has never checked
+      # a fixture against the schemas, so every payload edited in FC-002 and
+      # FC-006, and the direction attribute added in FC-008, is unverified
+      # against DemandFlexNeed — which declares additionalProperties: false,
+      # meaning an undeclared field is a hard rejection on a real node.
+      #
+      # Uses the repository's own scripts/validate_schema.py, so this checks
+      # what a node's validateSchema step would check rather than something
+      # we invented. It resolves $refs from schema.nfh.global over the
+      # network, hence the external dependency.
+      #
+      # NOTE: the script always exits 0 — it catches every exception and
+      # prints it, and has no sys.exit. So its exit status says nothing. We
+      # capture the output and fail on error lines instead.
+      #
+      # Register: FORK-CHANGES.md FC-009
+      # ---------------------------------------------------------------------
+      - name: Fixtures validate against the schemas
+        continue-on-error: true
+        run: |
+          python3 -m pip install --quiet -r scripts/requirements.txt
+          python3 scripts/validate_schema.py \
+            devkits/demand-flex/uc1-bdr-w-baselining/examples/*.json \
+            devkits/demand-flex/uc2-bid-curve-pac/examples/*.json \
+            2>&1 | tee /tmp/schema-validation.log
+          echo
+          echo "=== summary ==="
+          ERRORS=$(grep -cE "Error processing|ValidationError|is not valid" /tmp/schema-validation.log || true)
+          echo "error lines: $ERRORS"
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "  Schema validation reported problems — see the log above."
+            exit 1
+          fi
+
+      # ---------------------------------------------------------------------
       # Every posted-price fixture must pass the network policy cleanly.
       #
       # `opa eval -d <policy> -i <input>` evaluates the policy against one
@@ -95,7 +132,33 @@ jobs:
           exit $FAILED
 
       # ---------------------------------------------------------------------
-      # Settlement must come out at exactly 436.25 INR.
+      # Settlement equals 436.25.                          [rewritten by FC-009]
+      #
+      # Now uses scripts/evaluate_demand_flex_settlement.py, which reads
+      # contractAttributes.policy from the payload to find the policy and
+      # query path. Our previous version hardcoded $CON, so it evaluated
+      # every fixture against the posted-price policy whether or not that
+      # was the one governing it.
+      #
+      # Register: FORK-CHANGES.md FC-009
+      # ---------------------------------------------------------------------
+      - name: Settlement equals 436.25
+        run: |
+          FAILED=0
+          for f in on-status-response-settled.json on-status-response-actuals.json; do
+            echo "=== $f"
+            OUT=$(python3 scripts/evaluate_demand_flex_settlement.py "$UC1/$f" 2>&1)
+            echo "$OUT"
+            if echo "$OUT" | grep -q "436.25"; then
+              echo "  PASS  436.25 present"
+            else
+              echo "  FAIL  436.25 not found in report"; FAILED=1
+            fi
+          done
+          exit $FAILED
+
+      # ---------------------------------------------------------------------
+      # Settlement must come out at exactly 436.25 INR. [OLD]
       #
       # This is the headline number: two half-hour slots, two meters, from
       # the shipped example. The implementation guide claims 525, which the
@@ -107,7 +170,7 @@ jobs:
       # +436.25 and the buyer -436.25. Both are checked: a net-zero error
       # would show as a mismatched pair.
       # ---------------------------------------------------------------------
-      - name: Settlement equals 436.25
+      - name: Settlement equals 436.25 (direct)
         run: |
           FAILED=0
           for f in on-status-response-settled.json on-status-response-actuals.json; do
