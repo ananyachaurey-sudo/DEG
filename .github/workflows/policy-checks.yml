@@ -87,9 +87,19 @@ jobs:
       # prints it, and has no sys.exit. So its exit status says nothing. We
       # capture the output and fail on error lines instead.
       #
+      # LIMIT: this validates message.contract against the core Beckn Contract
+      # structure only. The validator resolves domain attribute schemas from
+      # @context URLs and prints "Loaded: <schema>/<version>" when it does —
+      # no such line appears for any demand-flex fixture, so DemandFlexNeed,
+      # DemandFlexBuyOffer and BecknTimeSeries are NOT checked here, and
+      # additionalProperties: false is not exercised. publish-catalog.json and
+      # discover-request.json carry no message.contract and are not validated
+      # at all. The FC-008 `direction` attribute therefore remains unverified
+      # against its schema.      
+      #
       # Register: FORK-CHANGES.md FC-009
       # ---------------------------------------------------------------------
-      - name: Fixtures validate against the schemas
+      - name: Fixtures validate against the core Beckn contract schemas
         continue-on-error: true
         run: |
           echo "=== installing dependencies ==="
