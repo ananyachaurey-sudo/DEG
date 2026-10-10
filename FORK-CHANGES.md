@@ -62,6 +62,7 @@ reintroduced while FC-001 was being written (see Known limits).
 | FC-006 | `specification/policies/demand-flex-networkpolicy.rego`<br>`specification/policies/test/demand-flex-networkpolicy_test.rego`<br>11 fixtures under `devkits/demand-flex/uc2-bid-curve-pac/examples/` | Rule 5b additionally requires `SHORTFALL_PENALTY` on the need. All bid-curve fixtures carrying a need gain the column at 0.5, matching the penalty rate already in their offer inputs. | An aggregator pricing flexibility is pricing a risk and cannot price downside it has not been told about. Unlike `PRICE`, both products need it: posted-price to compute, discovered-price as a bid input. Required rather than optional so "no penalty" (0) is distinguishable from "not stated yet" (absent). Required from catalogue, which also prevents late introduction. | Applied on `fc-006-shortfall-penalty-required` |
 | FC-007 | `specification/policies/demand-flex-contractpolicy.rego`<br>`specification/policies/test/demand-flex-contractpolicy_test.rego` | New violation requiring a `PRICE` column on the need. Two tests added. | The policy reads `PRICE` per interval but never checked it was declared — safe only because the network policy's column lock guaranteed it, which FC-001 removed. The requirement cannot live at the network layer, because a discovered-price event carries no `PRICE` and its absence is how that event declares itself. It belongs to the product that settles against a posted rate. Takes effect from `select` onward, since the contract policy is never invoked at `catalog/publish`; publishing the price at catalogue is an implementation obligation. | Applied on `fc-007-posted-price-requires-price` |
 | FC-008 | `specification/schema/DemandFlexNeed/v2.0/attributes.yaml`<br>`specification/schema/DemandFlexBuyOffer/v2.0/attributes.yaml`<br>`specification/policies/demand-flex-contractpolicy.rego`<br>`specification/policies/test/demand-flex-contractpolicy_test.rego` | New optional `direction` attribute on the need (`SHED` \| `ABSORB`, default `SHED`). `_meter_reduction` becomes `_meter_delta` with two bodies branching on it. New violation on an unrecognised value. Both schemas' negative-price claims removed. | The offer schema claimed a negative `PRICE` paid for increased consumption and gave that as the reason no direction field existed. No policy implemented it, and it is insufficient in principle: the settlement rule changes, not just the sign of the result. Direction is declared because, unlike procurement mode, no existing carrier declares it — a separate absorb policy would duplicate settlement arithmetic differing in one operator. | Applied on `fc-008-direction-declaration` |
+| FC-009 | `.github/workflows/policy-checks.yml` | Adds schema validation against core Beckn contract schemas of all demand-flex fixtures using `scripts/validate_schema.py`, and rewrites the settlement assertion to use `scripts/evaluate_demand_flex_settlement.py`. | CI had never validated a fixture against the schemas, so every payload edited in FC-002 and FC-006 and the attribute added in FC-008 were unverified against a schema declaring `additionalProperties: false`. Both scripts ship with the repository, so this exercises the maintainers' own tooling rather than a reimplementation. Note that `validate_schema.py` always exits 0 — it reports rather than gates — so its output is grepped for error lines. | Applied on `fc-009-schema-validation` |
 
 ### Carried over from FC-001
 
@@ -98,6 +99,18 @@ bid curve travels in the same contract, so the arithmetic can be checked
 against the aggregator's own signed bid.
 
 Step 7 has no defined shape for a decline. Tracked separately.
+
+### FC-009 Limit
+
+LIMIT: FC-009 validates message.contract against the core Beckn Contract 
+structure only. The validator resolves domain attribute schemas from
+@context URLs and prints "Loaded: <schema>/<version>" when it does —
+no such line appears for any demand-flex fixture, so DemandFlexNeed,
+DemandFlexBuyOffer and BecknTimeSeries are NOT checked here, and
+additionalProperties: false is not exercised. publish-catalog.json and
+discover-request.json carry no message.contract and are not validated
+at all. The FC-008 `direction` attribute therefore remains unverified
+against its schema.
 
 ## Files added by this fork
 
