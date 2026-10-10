@@ -92,19 +92,35 @@ jobs:
       - name: Fixtures validate against the schemas
         continue-on-error: true
         run: |
-          python3 -m pip install --quiet -r scripts/requirements.txt
+          echo "=== installing dependencies ==="
+          python3 -m pip install -r scripts/requirements.txt
+          echo
+          echo "=== verifying imports ==="
+          python3 -c "import jsonschema, referencing, yaml; print('imports OK')"
+          echo
+          echo "=== validating ==="
           python3 scripts/validate_schema.py \
             devkits/demand-flex/uc1-bdr-w-baselining/examples/*.json \
             devkits/demand-flex/uc2-bid-curve-pac/examples/*.json \
             2>&1 | tee /tmp/schema-validation.log
           echo
           echo "=== summary ==="
-          ERRORS=$(grep -cE "Error processing|ValidationError|is not valid" /tmp/schema-validation.log || true)
-          echo "error lines: $ERRORS"
-          if [ "$ERRORS" -gt 0 ]; then
-            echo "  Schema validation reported problems — see the log above."
-            exit 1
+          PROCESSED=$(grep -c "^Processing " /tmp/schema-validation.log || true)
+          ERRORS=$(grep -cE "Error processing|ValidationError|is not valid|Traceback" /tmp/schema-validation.log || true)
+          echo "files processed: $PROCESSED   (expected 27)"
+          echo "error lines:     $ERRORS"
+          FAILED=0
+          if [ "$PROCESSED" -ne 27 ]; then
+            echo "  ASSERT FAILED: the validator did not process all 27 fixtures."
+            echo "  A crash before main() produces no error lines, so an error"
+            echo "  count of zero does not mean the fixtures are valid."
+            FAILED=1
           fi
+          if [ "$ERRORS" -gt 0 ]; then
+            echo "  ASSERT FAILED: schema validation reported problems."
+            FAILED=1
+          fi
+          exit $FAILED
 
       # ---------------------------------------------------------------------
       # Every posted-price fixture must pass the network policy cleanly.
@@ -149,10 +165,13 @@ jobs:
             echo "=== $f"
             OUT=$(python3 scripts/evaluate_demand_flex_settlement.py "$UC1/$f" 2>&1)
             echo "$OUT"
-            if echo "$OUT" | grep -q "436.25"; then
-              echo "  PASS  436.25 present"
+            if echo "$OUT" | grep -q "436.25" \
+               && echo "$OUT" | grep -q "237.50" \
+               && echo "$OUT" | grep -q "198.75" \
+               && echo "$OUT" | grep -q "Net-zero verified : YES"; then
+              echo "  PASS  total 436.25, slots 237.50 + 198.75, net-zero verified"
             else
-              echo "  FAIL  436.25 not found in report"; FAILED=1
+              echo "  FAIL  expected 436.25 total from slots 237.50 and 198.75"; FAILED=1
             fi
           done
           exit $FAILED
