@@ -97,16 +97,9 @@ jobs:
       # Register: FORK-CHANGES.md FC-009
       # ---------------------------------------------------------------------
       - name: Fixtures validate against the core Beckn contract schema
-        continue-on-error: true
         run: |
           echo "=== installing dependencies ==="
           python3 -m pip install -r scripts/requirements.txt
-          # FC-009: requirements.txt pins no floor on jsonschema, and the
-          # runner ships 4.10.3 from system packages. validate_schema.py
-          # imports `referencing`, which only became a jsonschema dependency
-          # at 4.18 — so the script crashes at import on a stock runner.
-          # Raised separately as a fix to scripts/requirements.txt.
-          python3 -m pip install --upgrade 'jsonschema>=4.18' referencing
           echo
           echo "=== verifying imports ==="
           python3 -c "import jsonschema, referencing, yaml; print('jsonschema', jsonschema.__version__)"
