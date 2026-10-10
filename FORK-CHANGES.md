@@ -90,6 +90,16 @@ discovered-price event from `confirm` to `init`.
 6. Aggregator commits at `confirm`
 7. Utility clears or declines at `on_confirm`
 
+The aggregator signs before knowing the clearing outcome. That is correct
+auction behaviour — a withdrawable bid would be a free option. The
+aggregator is protected by the pay-as-clear invariant already enforced in
+`demand-flex-pac-contractpolicy.rego`: the clearing price must be at least
+the cheapest ask whose paired capacity covers the cleared quantity, and the
+bid curve travels in the same contract, so the arithmetic can be checked
+against the aggregator's own signed bid.
+
+Step 7 has no defined shape for a decline. Tracked separately.
+
 ### FC-009 Limit
 
 LIMIT: FC-009 validates message.contract against the core Beckn Contract 
@@ -101,16 +111,6 @@ additionalProperties: false is not exercised. publish-catalog.json and
 discover-request.json carry no message.contract and are not validated
 at all. The FC-008 `direction` attribute therefore remains unverified
 against its schema.
-
-The aggregator signs before knowing the clearing outcome. That is correct
-auction behaviour — a withdrawable bid would be a free option. The
-aggregator is protected by the pay-as-clear invariant already enforced in
-`demand-flex-pac-contractpolicy.rego`: the clearing price must be at least
-the cheapest ask whose paired capacity covers the cleared quantity, and the
-bid curve travels in the same contract, so the arithmetic can be checked
-against the aggregator's own signed bid.
-
-Step 7 has no defined shape for a decline. Tracked separately.
 
 ## Files added by this fork
 
