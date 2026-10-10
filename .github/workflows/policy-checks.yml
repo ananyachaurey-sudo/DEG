@@ -97,7 +97,6 @@ jobs:
       # Register: FORK-CHANGES.md FC-009
       # ---------------------------------------------------------------------
       - name: Fixtures validate against the core Beckn contract schema
-        continue-on-error: true
         run: |
           echo "=== installing dependencies ==="
           python3 -m pip install -r scripts/requirements.txt
