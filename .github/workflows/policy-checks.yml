@@ -156,17 +156,19 @@ jobs:
       - name: DemandFlexNeed attributes validate against the local schema
         run: |
           python3 - <<'PY'
-          import json, glob, sys, yaml, jsonschema
+          import json, glob, sys, copy, yaml, jsonschema
 
           spec = yaml.safe_load(open(
               "specification/schema/DemandFlexNeed/v2.0/attributes.yaml"))
           schema = spec["components"]["schemas"]["DemandFlexNeed"]
-          # $refs point at schema.nfh.global; drop the subschemas that use them
-          # so this runs offline. We are testing our own field declarations,
-          # not the OpenADR primitives.
-          for k in ("intervalPeriod", "intervals", "payloadDescriptors", "location"):
-              schema.get("properties", {}).pop(k, None)
-          schema.pop("required", None)
+
+          # These four resolve via $ref to schema.nfh.global. Strip them from
+          # the PAYLOAD, not from the schema — removing their declarations
+          # would leave additionalProperties: false rejecting legitimate
+          # fields. Keeping the schema intact means the guard still applies
+          # to everything else, which is the point: it is what would reject
+          # `direction` if FC-008's declaration were wrong.
+          REF_FIELDS = ("intervalPeriod", "intervals", "payloadDescriptors", "location")
 
           found = fails = 0
           for f in sorted(glob.glob("devkits/demand-flex/*/examples/*.json")):
@@ -182,11 +184,13 @@ jobs:
                       stack.extend(n)
               for need in needs:
                   found += 1
+                  trimmed = {k: v for k, v in need.items() if k not in REF_FIELDS}
                   try:
-                      jsonschema.validate(need, schema)
+                      jsonschema.validate(trimmed, schema)
                   except jsonschema.ValidationError as e:
                       fails += 1
                       print(f"  FAIL  {f}\n        {e.message}")
+
           print(f"\n  DemandFlexNeed objects validated: {found}, failures: {fails}")
           dirs = sum(1 for f in glob.glob("devkits/demand-flex/uc3-absorb/examples/*.json")
                      if '"direction"' in open(f).read())
