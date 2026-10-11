@@ -70,6 +70,20 @@ jobs:
           opa check $NET specification/policies/test/demand-flex-networkpolicy_test.rego || true
           echo "=== done ==="
 
+      # TEMPORARY - remove once the output has been committed.
+      # Generates the uc3 settled fixture from the actuals using the
+      # repository's own evaluator, so the revenue flows are derived from
+      # the policy rather than written by hand.
+      - name: TEMP generate uc3 settled fixture
+        run: |
+          python3 scripts/evaluate_demand_flex_settlement.py \
+            "$UC3/on-status-response-actuals.json" \
+            -g /tmp/generated-settled.json
+          echo
+          echo "=========== COPY EVERYTHING BELOW THIS LINE ==========="
+          cat /tmp/generated-settled.json
+          echo "=========== COPY EVERYTHING ABOVE THIS LINE ==========="
+      
       # ---------------------------------------------------------------------
       # Core contract structure validation.                 [added by FC-009]
       #
