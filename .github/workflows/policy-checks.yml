@@ -135,6 +135,69 @@ jobs:
           exit $FAILED
 
       # ---------------------------------------------------------------------
+      # DemandFlexNeed attribute validation.               [added by FC-011]
+      #
+      # The step above validates message.contract against the core Beckn
+      # Contract structure only — it never descends into resourceAttributes,
+      # so DemandFlexNeed is unchecked and additionalProperties: false is
+      # never exercised.
+      #
+      # That matters because FC-008 added a `direction` attribute to that
+      # schema. An undeclared field is a hard rejection on a real node, so
+      # the uc3 fixtures would fail at validateSchema if the schema edit were
+      # wrong — while our CI stayed green.
+      #
+      # This validates every DemandFlexNeed found in any fixture against the
+      # LOCAL specification/schema/DemandFlexNeed/v2.0/attributes.yaml, which
+      # is the file FC-008 edited and the one a node resolves @context to.
+      #
+      # Register: FORK-CHANGES.md FC-011
+      # ---------------------------------------------------------------------
+      - name: DemandFlexNeed attributes validate against the local schema
+        run: |
+          python3 - <<'PY'
+          import json, glob, sys, yaml, jsonschema
+
+          spec = yaml.safe_load(open(
+              "specification/schema/DemandFlexNeed/v2.0/attributes.yaml"))
+          schema = spec["components"]["schemas"]["DemandFlexNeed"]
+          # $refs point at schema.nfh.global; drop the subschemas that use them
+          # so this runs offline. We are testing our own field declarations,
+          # not the OpenADR primitives.
+          for k in ("intervalPeriod", "intervals", "payloadDescriptors", "location"):
+              schema.get("properties", {}).pop(k, None)
+          schema.pop("required", None)
+
+          found = fails = 0
+          for f in sorted(glob.glob("devkits/demand-flex/*/examples/*.json")):
+              doc = json.load(open(f))
+              stack, needs = [doc], []
+              while stack:
+                  n = stack.pop()
+                  if isinstance(n, dict):
+                      if n.get("@type") == "DemandFlexNeed":
+                          needs.append(n)
+                      stack.extend(n.values())
+                  elif isinstance(n, list):
+                      stack.extend(n)
+              for need in needs:
+                  found += 1
+                  try:
+                      jsonschema.validate(need, schema)
+                  except jsonschema.ValidationError as e:
+                      fails += 1
+                      print(f"  FAIL  {f}\n        {e.message}")
+          print(f"\n  DemandFlexNeed objects validated: {found}, failures: {fails}")
+          dirs = sum(1 for f in glob.glob("devkits/demand-flex/uc3-absorb/examples/*.json")
+                     if '"direction"' in open(f).read())
+          print(f"  uc3 fixtures declaring a direction: {dirs}")
+          if found == 0 or dirs == 0:
+              print("  ASSERT FAILED: nothing was actually checked.")
+              sys.exit(1)
+          sys.exit(1 if fails else 0)
+          PY
+      
+      # ---------------------------------------------------------------------
       # Every posted-price fixture must pass the network policy cleanly.
       #
       # `opa eval -d <policy> -i <input>` evaluates the policy against one
