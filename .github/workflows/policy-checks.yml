@@ -163,12 +163,14 @@ jobs:
           schema = spec["components"]["schemas"]["DemandFlexNeed"]
 
           # These four resolve via $ref to schema.nfh.global. Strip them from
-          # the PAYLOAD, not from the schema — removing their declarations
-          # would leave additionalProperties: false rejecting legitimate
-          # fields. Keeping the schema intact means the guard still applies
-          # to everything else, which is the point: it is what would reject
-          # `direction` if FC-008's declaration were wrong.
+          # the payload so this runs offline, and drop them from `required`
+          # to match — but leave `properties` and additionalProperties: false
+          # intact, since that guard is exactly what would reject `direction`
+          # if FC-008's declaration were wrong.
           REF_FIELDS = ("intervalPeriod", "intervals", "payloadDescriptors", "location")
+          schema = copy.deepcopy(schema)
+          schema["required"] = [r for r in schema.get("required", [])
+                                if r not in REF_FIELDS]
 
           found = fails = 0
           for f in sorted(glob.glob("devkits/demand-flex/*/examples/*.json")):
