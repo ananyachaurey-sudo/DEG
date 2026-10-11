@@ -25,6 +25,7 @@ on:
 env:
   UC1: devkits/demand-flex/uc1-bdr-w-baselining/examples   # posted-price fixtures
   UC2: devkits/demand-flex/uc2-bid-curve-pac/examples      # discovered-price fixtures
+  UC3: devkits/demand-flex/uc3-absorb/examples             # absorb demand flex fixtures
   NET: specification/policies/demand-flex-networkpolicy.rego   # shared, both products
   CON: specification/policies/demand-flex-contractpolicy.rego  # posted-price settlement
   GUIDE: docs/implementation-guides/v2/Demand_Flexibility/Demand_Flexibility.md
@@ -106,18 +107,23 @@ jobs:
           echo
           echo "=== validating ==="
           python3 scripts/validate_schema.py \
-            devkits/demand-flex/uc1-bdr-w-baselining/examples/*.json \
-            devkits/demand-flex/uc2-bid-curve-pac/examples/*.json \
+            $UC1/*.json $UC2/*.json $UC3/*.json \
             2>&1 | tee /tmp/schema-validation.log
           echo
           echo "=== summary ==="
+          # Derive the expectation from the filesystem rather than hardcoding
+          # it. A hardcoded count has already failed to catch two things: a
+          # crash before main(), and a new fixture directory the globs did
+          # not include. Counting what we asked for means coverage cannot
+          # silently shrink when fixtures are added.
+          EXPECTED=$(ls $UC1/*.json $UC2/*.json $UC3/*.json | wc -l)
           PROCESSED=$(grep -c "^Processing " /tmp/schema-validation.log || true)
           ERRORS=$(grep -cE "Error processing|ValidationError|is not valid|Traceback" /tmp/schema-validation.log || true)
-          echo "files processed: $PROCESSED   (expected 27)"
+          echo "files processed: $PROCESSED   (expected $EXPECTED)"
           echo "error lines:     $ERRORS"
           FAILED=0
-          if [ "$PROCESSED" -ne 27 ]; then
-            echo "  ASSERT FAILED: the validator did not process all 27 fixtures."
+          if [ "$PROCESSED" -ne "$EXPECTED" ]; then
+            echo "  ASSERT FAILED: validator processed $PROCESSED of $EXPECTED fixtures."
             echo "  A crash before main() produces no error lines, so an error"
             echo "  count of zero does not mean the fixtures are valid."
             FAILED=1
@@ -154,6 +160,39 @@ jobs:
           exit $FAILED
 
       # ---------------------------------------------------------------------
+      # Load-increase fixtures against the network policy.  [added by FC-011]
+      #
+      # uc3-absorb is the first fixture set declaring direction: ABSORB on
+      # DemandFlexNeed, the attribute added by FC-008.
+      #
+      # These should pass unchanged: direction is an ATTRIBUTE, not a payload
+      # column, so rule 5b is unaffected by it. The absorb needs carry
+      # CAPACITY_REQUESTED and SHORTFALL_PENALTY like any other, which is what
+      # 5b requires. Nothing about direction changes what makes a message well
+      # formed — it selects the settlement branch, which is a contract-policy
+      # concern.
+      #
+      # So a failure here would mean the network policy has picked up a
+      # product-specific assumption it should not have.
+      #
+      # Register: FORK-CHANGES.md FC-011
+      # ---------------------------------------------------------------------
+      - name: Every uc3 fixture passes the network policy
+        run: |
+          FAILED=0
+          for f in $UC3/*.json; do
+            V=$(opa eval -f json -d $NET -i "$f" \
+                 'data.deg.policy.demand_flex_network.violations' \
+                 | jq -c '.result[0].expressions[0].value')
+            if [ "$V" = "[]" ]; then
+              echo "  PASS  $(basename $f)"
+            else
+              echo "  FAIL  $(basename $f) -> $V"; FAILED=1
+            fi
+          done
+          exit $FAILED
+      
+      # ---------------------------------------------------------------------
       # Settlement equals 436.25.                          [rewritten by FC-009]
       #
       # Now uses scripts/evaluate_demand_flex_settlement.py, which reads
@@ -183,38 +222,37 @@ jobs:
           exit $FAILED
 
       # ---------------------------------------------------------------------
-      # Settlement must come out at exactly 436.25 INR. [OLD]
+      # Load-increase settlement equals 580.00.            [added by FC-011]
       #
-      # This is the headline number: two half-hour slots, two meters, from
-      # the shipped example. The implementation guide claims 525, which the
-      # policy has never produced and which the guide's own stated terms
-      # cannot reach. Asserting it here is what stops documentation and code
-      # drifting apart again.
+      # Worked event: two 30-minute slots, two meters.
+      #   slot 0  offered 300 kW  delivered 300  @ 2.50  ->  375.00
+      #   slot 1  offered 250 kW  delivered 220  @ 2.00  ->  220.00
+      #           less shortfall 30 kW @ 1.00            ->  -15.00
+      #                                            TOTAL     580.00
       #
-      # revenue_flows returns one entry per role, so the seller receives
-      # +436.25 and the buyer -436.25. Both are checked: a net-zero error
-      # would show as a mismatched pair.
+      # Under SHED this same data delivers ZERO in every interval, because
+      # usage exceeds baseline throughout. So this fixture cannot pass by
+      # coincidence — it proves the direction branch added by FC-008. Before
+      # that change an aggregator that correctly raised consumption would
+      # have measured as delivering nothing and taken the full penalty.
+      #
+      # Register: FORK-CHANGES.md FC-011
       # ---------------------------------------------------------------------
-      - name: Settlement equals 436.25 (direct)
+      - name: Load-increase settlement equals 580.00
         run: |
-          FAILED=0
-          for f in on-status-response-settled.json on-status-response-actuals.json; do
-            S=$(opa eval -f json -d $CON -i "$UC1/$f" \
-                 'data.deg.contracts.demand_flex.revenue_flows' \
-                 | jq -r '.result[0].expressions[0].value
-                          | map(select(.role=="seller")) | .[0].value')
-            B=$(opa eval -f json -d $CON -i "$UC1/$f" \
-                 'data.deg.contracts.demand_flex.revenue_flows' \
-                 | jq -r '.result[0].expressions[0].value
-                          | map(select(.role=="buyer")) | .[0].value')
-            if [ "$S" = "436.25" ] && [ "$B" = "-436.25" ]; then
-              echo "  PASS  $f  seller=$S buyer=$B"
-            else
-              echo "  FAIL  $f  seller=$S buyer=$B (expected 436.25 / -436.25)"; FAILED=1
-            fi
-          done
-          exit $FAILED
-
+          OUT=$(python3 scripts/evaluate_demand_flex_settlement.py \
+                  "$UC3/on-status-response-actuals.json" 2>&1)
+          echo "$OUT"
+          if echo "$OUT" | grep -q "580.00" \
+             && echo "$OUT" | grep -q "375.00" \
+             && echo "$OUT" | grep -q "205.00" \
+             && echo "$OUT" | grep -q "Net-zero verified : YES"; then
+            echo "  PASS  total 580.00, slots 375.00 + 205.00, net-zero verified"
+          else
+            echo "  FAIL  expected 580.00 total from slots 375.00 and 205.00"
+            exit 1
+          fi
+      
       # ---------------------------------------------------------------------
       # The repository's own Rego unit tests — roughly 113 of them across the
       # demand-flex and P2P policies, mostly negative cases asserting that
