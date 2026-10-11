@@ -1,0 +1,25 @@
+{
+  "context": {
+    "networkId": "nfh.global/testnet-deg",
+    "version": "2.0.0",
+    "action": "discover",
+    "bapId": "bap.example.com",
+    "bapUri": "https://bap.example.com/beckn",
+    "transactionId": "3d39df73-a4c0-4374-9836-ec6c365a7ecc",
+    "messageId": "258ed231-2def-4840-86ed-2970320c2294",
+    "timestamp": "2026-07-14T09:00:00Z",
+    "schemaContext": [
+      "https://schema.nfh.global/DemandFlexBuyOffer/v2.0/context.jsonld",
+      "https://schema.nfh.global/DemandFlexNeed/v2.0/context.jsonld",
+      "https://schema.nfh.global/DEGContract/v2.0/context.jsonld"
+    ]
+  },
+  "message": {
+    "intent": {
+      "filters": {
+        "type": "jsonpath",
+        "expression": "$.catalogs[*] ? (@.provider.id == 'bses-east-delhi' && exists(@.resources) && @.offers[*].validity.endDate >= '2026-07-14T00:00:00Z' && @.resources[*].resourceAttributes.intervalPeriod.start >= '2026-07-15T00:00:00Z' && @.resources[*].resourceAttributes.intervalPeriod.start < '2026-04-02T00:00:00Z')"
+      }
+    }
+  }
+}
