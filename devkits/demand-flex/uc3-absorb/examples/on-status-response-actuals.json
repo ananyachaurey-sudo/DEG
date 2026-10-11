@@ -1,0 +1,462 @@
+{
+  "context": {
+    "networkId": "nfh.global/testnet-deg",
+    "version": "2.0.0",
+    "action": "on_status",
+    "bapId": "bap.example.com",
+    "bapUri": "https://bap.example.com/beckn",
+    "bppId": "bpp.example.com",
+    "bppUri": "https://bpp.example.com/beckn",
+    "transactionId": "3d39df73-a4c0-4374-9836-ec6c365a7ecc",
+    "messageId": "4ba4381d-c64c-4a02-b188-d382b5bcb422",
+    "timestamp": "2026-07-15T10:35:00Z",
+    "schemaContext": [
+      "https://schema.nfh.global/DemandFlexPerformance/v2.0/context.jsonld",
+      "https://schema.nfh.global/BecknTimeSeries/v1.0/context.jsonld",
+      "https://schema.nfh.global/DemandFlexNeed/v2.0/context.jsonld",
+      "https://schema.nfh.global/DEGContract/v2.0/context.jsonld",
+      "https://schema.nfh.global/BecknReportDescriptors/v1.0/context.jsonld",
+      "https://schema.nfh.global/Quantity/v2.0/context.jsonld",
+      "https://schema.nfh.global/EnergyResource/v2.0/context.jsonld",
+      "https://schema.nfh.global/DemandFlexBuyOffer/v2.0/context.jsonld"
+    ]
+  },
+  "message": {
+    "contract": {
+      "id": "contract-absorb-001",
+      "status": {
+        "code": "ACTIVE"
+      },
+      "commitments": [
+        {
+          "id": "commitment-absorb-001",
+          "status": {
+            "descriptor": {
+              "code": "ACTIVE"
+            }
+          },
+          "resources": [
+            {
+              "id": "absorb-need-east-delhi-jul15",
+              "quantity": {
+                "unitCode": "kW",
+                "unitQuantity": 320,
+                "@type": "Quantity"
+              },
+              "resourceAttributes": {
+                "@context": "https://schema.nfh.global/DemandFlexNeed/v2.0/context.jsonld",
+                "@type": "DemandFlexNeed",
+                "location": {
+                  "geo": {
+                    "type": "Point",
+                    "coordinates": [
+                      77.209,
+                      28.6139
+                    ]
+                  }
+                },
+                "intervalPeriod": {
+                  "start": "2026-07-15T06:30:00Z",
+                  "duration": "PT30M"
+                },
+                "payloadDescriptors": [
+                  {
+                    "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                    "payloadType": "CAPACITY_REQUESTED",
+                    "units": "KW",
+                    "insertedBy": "buyer"
+                  },
+                  {
+                    "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                    "payloadType": "PRICE",
+                    "units": "INR_PER_KWH",
+                    "insertedBy": "buyer"
+                  },
+                  {
+                    "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                    "payloadType": "SHORTFALL_PENALTY",
+                    "units": "INR_PER_KWH",
+                    "insertedBy": "buyer"
+                  }
+                ],
+                "intervals": [
+                  {
+                    "id": 0,
+                    "payloads": [
+                      {
+                        "type": "CAPACITY_REQUESTED",
+                        "values": [
+                          320
+                        ]
+                      },
+                      {
+                        "type": "PRICE",
+                        "values": [
+                          2.5
+                        ]
+                      },
+                      {
+                        "type": "SHORTFALL_PENALTY",
+                        "values": [
+                          1.0
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "id": 1,
+                    "payloads": [
+                      {
+                        "type": "CAPACITY_REQUESTED",
+                        "values": [
+                          280
+                        ]
+                      },
+                      {
+                        "type": "PRICE",
+                        "values": [
+                          2.0
+                        ]
+                      },
+                      {
+                        "type": "SHORTFALL_PENALTY",
+                        "values": [
+                          1.0
+                        ]
+                      }
+                    ]
+                  }
+                ],
+                "direction": "ABSORB"
+              }
+            }
+          ],
+          "offer": {
+            "id": "offer-absorb-001",
+            "resourceIds": [
+              "absorb-need-east-delhi-jul15"
+            ],
+            "offerAttributes": {
+              "@context": "https://schema.nfh.global/DemandFlexBuyOffer/v2.0/context.jsonld",
+              "@type": "DemandFlexBuyOffer",
+              "inputs": [
+                {
+                  "role": "buyer",
+                  "participantId": "bses-east-delhi",
+                  "inputs": {
+                    "currency": "INR",
+                    "baselineMethodology": {
+                      "bestOf": 5,
+                      "outOf": 10
+                    }
+                  }
+                },
+                {
+                  "role": "seller",
+                  "participantId": "greenflex-agg",
+                  "inputs": {
+                    "participatingMeters": [
+                      "did:web:bsesdelhi.co.in:meters:5001",
+                      "did:web:bsesdelhi.co.in:meters:5002",
+                      "did:web:bsesdelhi.co.in:meters:5002"
+                    ],
+                    "energyResources": [
+                      {
+                        "@type": "EnergyResource",
+                        "id": "did:web:tatamotors.com:vin:VIN001",
+                        "type": "EV_CHARGER",
+                        "attributes": {
+                          "make": "Tata",
+                          "model": "Nexon EV",
+                          "ratedPowerKw": 7.0,
+                          "energyCapacityKwh": 30.0,
+                          "telemetryProvider": "tata-evp-telematics"
+                        },
+                        "parentResources": [
+                          "did:web:bsesdelhi.co.in:meters:5001"
+                        ]
+                      },
+                      {
+                        "@type": "EnergyResource",
+                        "id": "did:web:mgmotor.co.in:vin:VIN002",
+                        "type": "EV_CHARGER",
+                        "attributes": {
+                          "make": "MG",
+                          "model": "ZS EV",
+                          "ratedPowerKw": 7.0,
+                          "energyCapacityKwh": 44.5,
+                          "telemetryProvider": "mg-imotion"
+                        },
+                        "parentResources": [
+                          "did:web:bsesdelhi.co.in:meters:5002"
+                        ]
+                      },
+                      {
+                        "@type": "EnergyResource",
+                        "id": "did:web:tatamotors.com:vin:VIN003",
+                        "type": "EV_CHARGER",
+                        "attributes": {
+                          "make": "Tata",
+                          "model": "Tigor EV",
+                          "ratedPowerKw": 7.0,
+                          "energyCapacityKwh": 26.0,
+                          "telemetryProvider": "tata-evp-telematics"
+                        },
+                        "parentResources": [
+                          "did:web:bsesdelhi.co.in:meters:5002"
+                        ]
+                      }
+                    ],
+                    "reportDescriptors": [
+                      {
+                        "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                        "payloadType": "USAGE",
+                        "readingType": "DIRECT_READ",
+                        "units": "KW",
+                        "cardinality": "PER_INTERVAL"
+                      },
+                      {
+                        "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                        "payloadType": "POWER",
+                        "readingType": "DIRECT_READ",
+                        "units": "KW",
+                        "cardinality": "PER_INTERVAL"
+                      },
+                      {
+                        "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                        "payloadType": "SOC_END",
+                        "readingType": "DIRECT_READ",
+                        "units": "KWH",
+                        "cardinality": "PER_INTERVAL"
+                      },
+                      {
+                        "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                        "payloadType": "GPS_LAT",
+                        "readingType": "DIRECT_READ",
+                        "units": "DEGREES",
+                        "cardinality": "PER_EVENT"
+                      },
+                      {
+                        "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                        "payloadType": "GPS_LON",
+                        "readingType": "DIRECT_READ",
+                        "units": "DEGREES",
+                        "cardinality": "PER_EVENT"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          },
+          "commitmentAttributes": {
+            "@context": "https://schema.nfh.global/BecknTimeSeries/v1.0/context.jsonld",
+            "@type": "TimeSeries",
+            "intervalPeriod": {
+              "start": "2026-07-15T06:30:00Z",
+              "duration": "PT30M"
+            },
+            "payloadDescriptors": [
+              {
+                "objectType": "EVENT_PAYLOAD_DESCRIPTOR",
+                "payloadType": "CAPACITY_OFFERED",
+                "units": "KW",
+                "insertedBy": "seller"
+              }
+            ],
+            "intervals": [
+              {
+                "id": 0,
+                "payloads": [
+                  {
+                    "type": "CAPACITY_OFFERED",
+                    "values": [
+                      300
+                    ]
+                  }
+                ]
+              },
+              {
+                "id": 1,
+                "payloads": [
+                  {
+                    "type": "CAPACITY_OFFERED",
+                    "values": [
+                      250
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        }
+      ],
+      "performance": [
+        {
+          "id": "perf-evt-001-actuals",
+          "status": {
+            "code": "DELIVERY_COMPLETE",
+            "name": "Event completed, actuals measured"
+          },
+          "commitmentIds": [
+            "commitment-absorb-001"
+          ],
+          "performanceAttributes": {
+            "@context": "https://schema.nfh.global/DemandFlexPerformance/v2.0/context.jsonld",
+            "@type": "DemandFlexPerformance",
+            "eventId": "evt-2026-07-15-001",
+            "methodology": "5of10",
+            "meters": [
+              {
+                "meterId": "did:web:bsesdelhi.co.in:meters:5001",
+                "telemetry": {
+                  "@type": "TimeSeries",
+                  "intervalPeriod": {
+                    "start": "2026-07-15T06:30:00Z",
+                    "duration": "PT30M"
+                  },
+                  "payloadDescriptors": [
+                    {
+                      "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                      "payloadType": "BASELINE",
+                      "units": "KW",
+                      "readingType": "DIRECT_READ"
+                    },
+                    {
+                      "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                      "payloadType": "USAGE",
+                      "units": "KW",
+                      "readingType": "DIRECT_READ"
+                    }
+                  ],
+                  "intervals": [
+                    {
+                      "id": 0,
+                      "payloads": [
+                        {
+                          "type": "BASELINE",
+                          "values": [
+                            40.0
+                          ]
+                        },
+                        {
+                          "type": "USAGE",
+                          "values": [
+                            190.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "id": 1,
+                      "payloads": [
+                        {
+                          "type": "BASELINE",
+                          "values": [
+                            45.0
+                          ]
+                        },
+                        {
+                          "type": "USAGE",
+                          "values": [
+                            155.0
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              },
+              {
+                "meterId": "did:web:bsesdelhi.co.in:meters:5002",
+                "telemetry": {
+                  "@type": "TimeSeries",
+                  "intervalPeriod": {
+                    "start": "2026-07-15T06:30:00Z",
+                    "duration": "PT30M"
+                  },
+                  "payloadDescriptors": [
+                    {
+                      "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                      "payloadType": "BASELINE",
+                      "units": "KW",
+                      "readingType": "DIRECT_READ"
+                    },
+                    {
+                      "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                      "payloadType": "USAGE",
+                      "units": "KW",
+                      "readingType": "DIRECT_READ"
+                    }
+                  ],
+                  "intervals": [
+                    {
+                      "id": 0,
+                      "payloads": [
+                        {
+                          "type": "BASELINE",
+                          "values": [
+                            30.0
+                          ]
+                        },
+                        {
+                          "type": "USAGE",
+                          "values": [
+                            180.0
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "id": 1,
+                      "payloads": [
+                        {
+                          "type": "BASELINE",
+                          "values": [
+                            35.0
+                          ]
+                        },
+                        {
+                          "type": "USAGE",
+                          "values": [
+                            145.0
+                          ]
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "contractAttributes": {
+        "@context": "https://schema.nfh.global/DEGContract/v2.0/context.jsonld",
+        "@type": "DEGContract",
+        "roles": [
+          {
+            "role": "buyer",
+            "participantId": "bses-east-delhi"
+          },
+          {
+            "role": "seller",
+            "participantId": "greenflex-agg"
+          }
+        ],
+        "policy": {
+          "url": "https://raw.githubusercontent.com/beckn/DEG/refs/heads/main/specification/policies/demand-flex-contractpolicy.rego",
+          "queryPath": "data.deg.contracts.demand_flex"
+        }
+      },
+      "participants": [
+        {
+          "id": "bses-east-delhi"
+        },
+        {
+          "id": "greenflex-agg"
+        }
+      ]
+    }
+  }
+}
