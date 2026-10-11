@@ -8,14 +8,17 @@
     "bppId": "bpp.example.com",
     "bppUri": "https://bpp.example.com/beckn",
     "transactionId": "3d39df73-a4c0-4374-9836-ec6c365a7ecc",
-    "messageId": "8a1f0b2c-3d4e-5f60-7182-93a4b5c6d7e8",
-    "timestamp": "2026-07-15T11:00:00Z",
+    "messageId": "4ba4381d-c64c-4a02-b188-d382b5bcb422",
+    "timestamp": "2026-07-15T10:35:00Z",
     "schemaContext": [
-      "https://schema.nfh.global/DemandFlexBuyOffer/v2.0/context.jsonld",
-      "https://schema.nfh.global/DemandFlexNeed/v2.0/context.jsonld",
       "https://schema.nfh.global/DemandFlexPerformance/v2.0/context.jsonld",
+      "https://schema.nfh.global/BecknTimeSeries/v1.0/context.jsonld",
+      "https://schema.nfh.global/DemandFlexNeed/v2.0/context.jsonld",
       "https://schema.nfh.global/DEGContract/v2.0/context.jsonld",
-      "https://schema.nfh.global/BecknTimeSeries/v1.0/context.jsonld"
+      "https://schema.nfh.global/BecknReportDescriptors/v1.0/context.jsonld",
+      "https://schema.nfh.global/Quantity/v2.0/context.jsonld",
+      "https://schema.nfh.global/EnergyResource/v2.0/context.jsonld",
+      "https://schema.nfh.global/DemandFlexBuyOffer/v2.0/context.jsonld"
     ]
   },
   "message": {
@@ -29,15 +32,12 @@
           "id": "commitment-absorb-001",
           "status": {
             "descriptor": {
-              "code": "CLOSED"
+              "code": "COMPLETE"
             }
           },
           "resources": [
             {
               "id": "absorb-need-east-delhi-jul15",
-              "descriptor": {
-                "name": "Midday Absorption - East Delhi"
-              },
               "quantity": {
                 "unitCode": "kW",
                 "unitQuantity": 320,
@@ -136,9 +136,6 @@
             "resourceIds": [
               "absorb-need-east-delhi-jul15"
             ],
-            "validity": {
-              "endDate": "2026-03-31T08:30:00Z"
-            },
             "offerAttributes": {
               "@context": "https://schema.nfh.global/DemandFlexBuyOffer/v2.0/context.jsonld",
               "@type": "DemandFlexBuyOffer",
@@ -160,7 +157,92 @@
                   "inputs": {
                     "participatingMeters": [
                       "did:web:bsesdelhi.co.in:meters:5001",
+                      "did:web:bsesdelhi.co.in:meters:5002",
                       "did:web:bsesdelhi.co.in:meters:5002"
+                    ],
+                    "energyResources": [
+                      {
+                        "@type": "EnergyResource",
+                        "id": "did:web:tatamotors.com:vin:VIN001",
+                        "type": "EV_CHARGER",
+                        "attributes": {
+                          "make": "Tata",
+                          "model": "Nexon EV",
+                          "ratedPowerKw": 7.0,
+                          "energyCapacityKwh": 30.0,
+                          "telemetryProvider": "tata-evp-telematics"
+                        },
+                        "parentResources": [
+                          "did:web:bsesdelhi.co.in:meters:5001"
+                        ]
+                      },
+                      {
+                        "@type": "EnergyResource",
+                        "id": "did:web:mgmotor.co.in:vin:VIN002",
+                        "type": "EV_CHARGER",
+                        "attributes": {
+                          "make": "MG",
+                          "model": "ZS EV",
+                          "ratedPowerKw": 7.0,
+                          "energyCapacityKwh": 44.5,
+                          "telemetryProvider": "mg-imotion"
+                        },
+                        "parentResources": [
+                          "did:web:bsesdelhi.co.in:meters:5002"
+                        ]
+                      },
+                      {
+                        "@type": "EnergyResource",
+                        "id": "did:web:tatamotors.com:vin:VIN003",
+                        "type": "EV_CHARGER",
+                        "attributes": {
+                          "make": "Tata",
+                          "model": "Tigor EV",
+                          "ratedPowerKw": 7.0,
+                          "energyCapacityKwh": 26.0,
+                          "telemetryProvider": "tata-evp-telematics"
+                        },
+                        "parentResources": [
+                          "did:web:bsesdelhi.co.in:meters:5002"
+                        ]
+                      }
+                    ],
+                    "reportDescriptors": [
+                      {
+                        "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                        "payloadType": "USAGE",
+                        "readingType": "DIRECT_READ",
+                        "units": "KW",
+                        "cardinality": "PER_INTERVAL"
+                      },
+                      {
+                        "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                        "payloadType": "POWER",
+                        "readingType": "DIRECT_READ",
+                        "units": "KW",
+                        "cardinality": "PER_INTERVAL"
+                      },
+                      {
+                        "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                        "payloadType": "SOC_END",
+                        "readingType": "DIRECT_READ",
+                        "units": "KWH",
+                        "cardinality": "PER_INTERVAL"
+                      },
+                      {
+                        "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                        "payloadType": "GPS_LAT",
+                        "readingType": "DIRECT_READ",
+                        "units": "DEGREES",
+                        "cardinality": "PER_EVENT"
+                      },
+                      {
+                        "objectType": "REPORT_PAYLOAD_DESCRIPTOR",
+                        "payloadType": "GPS_LON",
+                        "readingType": "DIRECT_READ",
+                        "units": "DEGREES",
+                        "cardinality": "PER_EVENT"
+                      }
                     ]
                   }
                 }
@@ -211,10 +293,10 @@
       ],
       "performance": [
         {
-          "id": "perf-absorb-001",
+          "id": "perf-evt-001-actuals",
           "status": {
-            "code": "DELIVERY_COMPLETE",
-            "name": "Event settled"
+            "code": "SETTLED",
+            "name": "Settlement computed from policy evaluation"
           },
           "commitmentIds": [
             "commitment-absorb-001"
@@ -368,16 +450,16 @@
         },
         "revenueFlows": [
           {
-            "role": "buyer",
-            "value": -580.0,
             "currency": "INR",
-            "description": "Net payable across 2 absorption slots"
+            "description": "Net payable across 2 flex slots",
+            "role": "buyer",
+            "value": -580
           },
           {
-            "role": "seller",
-            "value": 580.0,
             "currency": "INR",
-            "description": "Net receivable across 2 absorption slots"
+            "description": "Net receivable across 2 flex slots",
+            "role": "seller",
+            "value": 580
           }
         ]
       },
